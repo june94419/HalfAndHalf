@@ -1,0 +1,36 @@
+{
+  "expo": {
+    "name": "반반",
+    "slug": "HalfAndHalf",
+    "scheme": "halfandhalf",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "dark",
+    "backgroundColor": "#141414",
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.halfandhalf.app"
+    },
+    "android": {
+      "package": "com.halfandhalf.app",
+      "adaptiveIcon": {
+        "backgroundColor": "#141414",
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundImage": "./assets/android-icon-background.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
+      }
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      "expo-web-browser"
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "88ea4254-2bae-4350-b14c-1905fc81a1ca"
+      }
+    }
+  }
+}
