@@ -1,266 +1,156 @@
-import React, { useEffect, useState, useRef } from 'react';
-import {
-  View, Text, TouchableOpacity, StyleSheet,
-  Animated, Dimensions,
-} from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { ref, onValue, update } from 'firebase/database';
+import React, { useState, useEffect } from 'react';
+import { View, Text, TouchableOpacity, StyleSheet, ActivityIndicator } from 'react-native';
+import { get, ref } from 'firebase/database';
 import { db } from '../../firebase';
-import { QUESTIONS } from '../data/questions';
-import { findDebateTopics } from '../utils/gameUtils';
-import HalfPizza from '../components/HalfPizza';
-
-const { width } = Dimensions.get('window');
-const TOTAL = QUESTIONS.length;
+import { BALANCE_QUESTIONS } from '../data/balanceQuestions';
+import ScreenShell from '../components/ScreenShell';
 
 export default function GameScreen({ route, navigation }) {
-  const { roomCode, nickname, isHost } = route.params;
-  const [qIndex, setQIndex] = useState(0);
-  const [myAnswer, setMyAnswer] = useState(null);
-  const [answers, setAnswers] = useState({});
-  const [players, setPlayers] = useState([]);
-  const [isLocked, setIsLocked] = useState(false);
-  const scaleA = useRef(new Animated.Value(1)).current;
-  const scaleB = useRef(new Animated.Value(1)).current;
-  const qIndexRef = useRef(qIndex);
+  const { questions: passedQuestions, category: passedCategory, roomId } = route.params;
 
-  // qIndex가 변경될 때마다 (직접 선택 or Firebase 신호 수신) selectedOption 초기화
-  // Android에서는 비동기 handleAnswer의 setMyAnswer(choice) 호출이 qIndex 전환 이후에도
-  // 늦게 도달해 이전 선택이 다음 문항에 남는 경우가 있어, setTimeout으로 한 번 더 강제 초기화.
+  const [questions, setQuestions] = useState(passedQuestions ?? []);
+  const [category, setCategory] = useState(passedCategory ?? '');
+  const [loading, setLoading] = useState(!!roomId);
+  const [currentIndex, setCurrentIndex] = useState(0);
+  const [voted, setVoted] = useState(false);
+  const [voteStats, setVoteStats] = useState({ a: 0, b: 0 });
+  const [history, setHistory] = useState([]);
+
+  // roomId가 있으면 Firebase에서 방 데이터를 읽어 질문 세트를 구성
   useEffect(() => {
-    qIndexRef.current = qIndex;
-    setMyAnswer(null);
-    setIsLocked(false);
-
-    const timer = setTimeout(() => {
-      setMyAnswer(null);
-      setIsLocked(false);
-    }, 100);
-
-    return () => clearTimeout(timer);
-  }, [qIndex]);
-
-  useEffect(() => {
-    const roomRef = ref(db, `rooms/${roomCode}`);
-    const unsub = onValue(roomRef, (snap) => {
-      if (!snap.exists()) return;
-      const data = snap.val();
-      const allPlayers = Object.keys(data.players || {});
-      setPlayers(allPlayers);
-
-      const qIdx = data.currentQuestion ?? 0;
-      setQIndex(qIdx);
-
-      const allAnswers = data.answers || {};
-      setAnswers(allAnswers);
-
-      const myAns = allAnswers[qIdx]?.[nickname] ?? null;
-      setMyAnswer(myAns);
-
-      const currentAnswers = allAnswers[qIdx] || {};
-      const allDone = allPlayers.length > 0 && allPlayers.every((p) => currentAnswers[p]);
-      setIsLocked(allDone);
-
-      if (allDone) {
-        if (isHost) {
-          const nextQ = qIdx + 1;
-          if (nextQ >= TOTAL) {
-            const debateTopics = findDebateTopics(allAnswers, allPlayers);
-            const debateQ = debateTopics.length > 0 ? debateTopics[0].questionIndex : null;
-            update(ref(db, `rooms/${roomCode}`), {
-              status: debateQ !== null ? 'debate' : 'results',
-              debateQuestion: debateQ,
-            });
-          } else {
-            update(ref(db, `rooms/${roomCode}`), { currentQuestion: nextQ });
-          }
-        }
+    if (!roomId) return;
+    (async () => {
+      try {
+        const snap = await get(ref(db, `rooms/${roomId}`));
+        if (!snap.exists()) { navigation.navigate('Lobby'); return; }
+        const data = snap.val();
+        const roomQuestions = Object.keys(data.answersA)
+          .map(idStr => BALANCE_QUESTIONS.find(q => q.id === Number(idStr)))
+          .filter(Boolean);
+        setQuestions(roomQuestions);
+        setCategory(data.category);
+        setLoading(false);
+      } catch (e) {
+        console.error('Failed to load room:', e);
+        navigation.navigate('Lobby');
       }
-
-      if (data.status === 'debate') {
-        navigation.replace('Debate', { roomCode, nickname, isHost });
-      } else if (data.status === 'results') {
-        navigation.replace('Result', { roomCode, nickname });
-      }
-    });
-    return () => unsub();
+    })();
   }, []);
 
-  async function handleAnswer(choice) {
-    if (isLocked || myAnswer === choice) return;
-    const answeredQ = qIndex;
-    Animated.sequence([
-      Animated.timing(choice === 'A' ? scaleA : scaleB, {
-        toValue: 0.93, duration: 80, useNativeDriver: true,
-      }),
-      Animated.timing(choice === 'A' ? scaleA : scaleB, {
-        toValue: 1, duration: 80, useNativeDriver: true,
-      }),
-    ]).start();
-    await update(ref(db, `rooms/${roomCode}/answers/${answeredQ}`), { [nickname]: choice });
-    // await 완료 시점에 이미 다음 문항으로 전환됐을 수 있으므로 인덱스가 같을 때만 반영
-    if (qIndexRef.current === answeredQ) {
-      setMyAnswer(choice);
+  const currentQuestion = questions[currentIndex];
+
+  const handleVote = (choice) => {
+    if (voted) return;
+    const randomA = Math.floor(Math.random() * 41) + 30;
+    setVoteStats({ a: randomA, b: 100 - randomA });
+    setVoted(true);
+    setHistory(prev => [...prev, { questionId: currentQuestion.id, choice }]);
+  };
+
+  const handleNext = () => {
+    if (currentIndex + 1 < questions.length) {
+      setCurrentIndex(currentIndex + 1);
+      setVoted(false);
+    } else {
+      navigation.replace('Result', roomId ? { roomId, history } : { category, history });
     }
+  };
+
+  const resetButton = (
+    <TouchableOpacity style={styles.resetButton} onPress={() => navigation.navigate('Lobby')}>
+      <Text style={styles.resetText}>처음으로</Text>
+    </TouchableOpacity>
+  );
+
+  if (loading) {
+    return (
+      <ScreenShell>
+        <View style={styles.loadingZone}>
+          <ActivityIndicator size="large" color="#1A1A1A" />
+          <Text style={styles.loadingText}>게임 불러오는 중...</Text>
+        </View>
+      </ScreenShell>
+    );
   }
 
-  const q = QUESTIONS[qIndex];
-  const currentAnswers = answers[qIndex] || {};
-  const countA = Object.values(currentAnswers).filter((v) => v === 'A').length;
-  const countB = Object.values(currentAnswers).filter((v) => v === 'B').length;
-  const answeredCount = Object.keys(currentAnswers).length;
-
   return (
-    <SafeAreaView style={styles.container}>
-      {/* 상단 진행률 */}
-      <View style={styles.progressWrap}>
-        <View style={styles.progressBar}>
-          <View style={[styles.progressFill, { width: `${((qIndex + 1) / TOTAL) * 100}%` }]} />
-        </View>
-        <Text style={styles.progressText}>{qIndex + 1} / {TOTAL}</Text>
-      </View>
-
-      {/* 질문 카드 */}
-      <View style={styles.questionCard}>
-        <View style={styles.qHeader}>
-          <HalfPizza size={28} />
-          <Text style={styles.qNum}>Q{qIndex + 1}</Text>
-        </View>
-        <Text style={styles.qText}>{q.question}</Text>
-
-        {/* 실시간 답변 현황 */}
-        {myAnswer && (
-          <View style={styles.liveBar}>
-            <View style={[styles.liveSegA, { flex: countA || 0.01 }]} />
-            <View style={[styles.liveSegB, { flex: countB || 0.01 }]} />
-          </View>
-        )}
-        {myAnswer && (
-          <Text style={styles.liveText}>
-            🍕 {countA}명 · 🧀 {countB}명  ({answeredCount}/{players.length}명 답변)
+    <ScreenShell rightAction={resetButton}>
+      <View style={styles.gameZone}>
+        <View style={styles.tagBadge}>
+          <Text style={styles.tagText}>
+            {currentQuestion.tag} ({currentIndex + 1} / {questions.length})
           </Text>
+        </View>
+
+        <View style={styles.questionGuideContainer}>
+          <Text style={styles.questionGuideText}>
+            Q. {currentQuestion.criteria || '둘 중 당신의 선택은?'}
+          </Text>
+        </View>
+
+        <View style={styles.balanceContainer}>
+          <TouchableOpacity
+            style={[styles.optionButton, voted && styles.disabledOption]}
+            onPress={() => handleVote('A')}
+            disabled={voted}
+          >
+            <View style={styles.optionBadgeA}><Text style={styles.optionBadgeText}>선택 A</Text></View>
+            <Text style={styles.questionText}>{currentQuestion.questionA}</Text>
+            <Text style={styles.descText}>{currentQuestion.descA}</Text>
+            {voted && <Text style={styles.statText}>{voteStats.a}%의 선택</Text>}
+          </TouchableOpacity>
+
+          <View style={styles.vsCircle}>
+            <Text style={styles.vsText}>VS</Text>
+          </View>
+
+          <TouchableOpacity
+            style={[styles.optionButton, styles.optionButtonB, voted && styles.disabledOption]}
+            onPress={() => handleVote('B')}
+            disabled={voted}
+          >
+            <View style={styles.optionBadgeB}><Text style={styles.optionBadgeText}>선택 B</Text></View>
+            <Text style={styles.questionText}>{currentQuestion.questionB}</Text>
+            <Text style={styles.descText}>{currentQuestion.descB}</Text>
+            {voted && <Text style={[styles.statText, styles.statTextB]}>{voteStats.b}%의 선택</Text>}
+          </TouchableOpacity>
+        </View>
+
+        {voted && (
+          <TouchableOpacity style={styles.nextButton} onPress={handleNext}>
+            <Text style={styles.nextButtonText}>
+              {currentIndex + 1 === questions.length ? '모든 가치관 결과 확인 🏁' : '다음 질문 매치 ➡️'}
+            </Text>
+          </TouchableOpacity>
         )}
       </View>
-
-      {/* 선택 버튼 */}
-      <View style={styles.btnRow}>
-        <Animated.View style={[{ flex: 1 }, { transform: [{ scale: scaleA }] }]}>
-          <TouchableOpacity
-            style={[
-              styles.choiceBtn,
-              styles.choiceBtnA,
-              myAnswer === 'A' && styles.choiceSelected,
-              myAnswer === 'B' && (isLocked ? styles.choiceDim : styles.choiceSoftDim),
-            ]}
-            onPress={() => handleAnswer('A')}
-            disabled={isLocked}
-            activeOpacity={0.85}
-          >
-            <Text style={styles.choiceLabel}>A</Text>
-            <Text style={styles.choiceText}>{q.a}</Text>
-            {myAnswer === 'A' && <Text style={styles.checkMark}>✓</Text>}
-          </TouchableOpacity>
-        </Animated.View>
-
-        <View style={styles.vsDivider}>
-          <Text style={styles.vsText}>VS</Text>
-        </View>
-
-        <Animated.View style={[{ flex: 1 }, { transform: [{ scale: scaleB }] }]}>
-          <TouchableOpacity
-            style={[
-              styles.choiceBtn,
-              styles.choiceBtnB,
-              myAnswer === 'B' && styles.choiceSelectedB,
-              myAnswer === 'A' && (isLocked ? styles.choiceDim : styles.choiceSoftDim),
-            ]}
-            onPress={() => handleAnswer('B')}
-            disabled={isLocked}
-            activeOpacity={0.85}
-          >
-            <Text style={styles.choiceLabel}>B</Text>
-            <Text style={styles.choiceTextDark}>{q.b}</Text>
-            {myAnswer === 'B' && <Text style={styles.checkMarkDark}>✓</Text>}
-          </TouchableOpacity>
-        </Animated.View>
-      </View>
-
-      {!!myAnswer && !isLocked && (
-        <View style={styles.waitBox}>
-          <Text style={styles.waitText}>⏳ 다른 플레이어 답변 기다리는 중...</Text>
-          <Text style={styles.waitSub}>{answeredCount}/{players.length}명 완료 · 마음이 바뀌면 다시 선택 가능!</Text>
-        </View>
-      )}
-    </SafeAreaView>
+    </ScreenShell>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#141414', paddingHorizontal: 20, paddingTop: 16 },
-  progressWrap: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 28 },
-  progressBar: {
-    flex: 1, height: 6, backgroundColor: '#2A2A2A',
-    borderRadius: 3, overflow: 'hidden',
-  },
-  progressFill: { height: '100%', backgroundColor: '#E63946', borderRadius: 3 },
-  progressText: { color: '#888', fontSize: 13, fontWeight: '700', minWidth: 40 },
-
-  questionCard: {
-    backgroundColor: '#1F1F1F',
-    borderRadius: 24,
-    padding: 28,
-    marginBottom: 28,
-    borderWidth: 1,
-    borderColor: '#2A2A2A',
-  },
-  qHeader: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 10 },
-  qNum: { color: '#E63946', fontSize: 13, fontWeight: '800', letterSpacing: 2 },
-  qText: { color: '#fff', fontSize: 22, fontWeight: '800', lineHeight: 32 },
-
-  liveBar: {
-    flexDirection: 'row',
-    height: 6,
-    borderRadius: 3,
-    overflow: 'hidden',
-    marginTop: 20,
-    marginBottom: 8,
-  },
-  liveSegA: { backgroundColor: '#E63946' },
-  liveSegB: { backgroundColor: '#FFD60A' },
-  liveText: { color: '#888', fontSize: 13, fontWeight: '500' },
-
-  btnRow: { flexDirection: 'row', alignItems: 'center', gap: 0, flex: 1, maxHeight: 220 },
-  choiceBtn: {
-    flex: 1,
-    borderRadius: 20,
-    padding: 20,
-    alignItems: 'center',
-    justifyContent: 'center',
-    minHeight: 160,
-    gap: 8,
-  },
-  choiceBtnA: { backgroundColor: '#E63946', marginRight: 6 },
-  choiceBtnB: { backgroundColor: '#FFD60A', marginLeft: 6 },
-  choiceSelected: { borderWidth: 3, borderColor: '#fff' },
-  choiceSelectedB: { borderWidth: 3, borderColor: '#1A1A1A' },
-  choiceDim: { opacity: 0.4 },
-  choiceSoftDim: { opacity: 0.65 },
-  choiceLabel: { color: 'rgba(255,255,255,0.5)', fontSize: 13, fontWeight: '800' },
-  choiceText: { color: '#fff', fontSize: 17, fontWeight: '800', textAlign: 'center' },
-  choiceTextDark: { color: '#1A1A1A', fontSize: 17, fontWeight: '800', textAlign: 'center' },
-  checkMark: { color: '#fff', fontSize: 22, fontWeight: '900' },
-  checkMarkDark: { color: '#1A1A1A', fontSize: 22, fontWeight: '900' },
-  vsDivider: { width: 28, alignItems: 'center', justifyContent: 'center' },
-  vsText: { color: '#555', fontSize: 13, fontWeight: '900' },
-
-  waitBox: {
-    backgroundColor: '#1F1F1F',
-    borderRadius: 14,
-    padding: 16,
-    alignItems: 'center',
-    marginTop: 16,
-    marginBottom: 20,
-  },
-  waitText: { color: '#888', fontSize: 14 },
-  waitSub: { color: '#FFD60A', fontSize: 13, fontWeight: '700', marginTop: 6 },
+  loadingZone: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  loadingText: { marginTop: 12, fontSize: 14, color: '#6B7280' },
+  gameZone: { flex: 1, justifyContent: 'center' },
+  resetButton: { position: 'absolute', right: 15, backgroundColor: '#F3F4F6', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20 },
+  resetText: { fontSize: 12, color: '#666', fontWeight: '600' },
+  tagBadge: { alignSelf: 'center', backgroundColor: '#1A1A1A', paddingHorizontal: 12, paddingVertical: 5, borderRadius: 20, marginBottom: 10 },
+  tagText: { color: '#FFF', fontSize: 11, fontWeight: '700' },
+  questionGuideContainer: { backgroundColor: '#F9FAFB', borderWidth: 1, borderColor: '#E5E7EB', borderRadius: 14, padding: 14, marginBottom: 14, alignItems: 'center' },
+  questionGuideText: { fontSize: 15, fontWeight: '900', color: '#111827', textAlign: 'center', lineHeight: 22 },
+  balanceContainer: { flex: 1, maxHeight: 420, justifyContent: 'space-between', position: 'relative' },
+  optionButton: { flex: 1, backgroundColor: '#FFF9F9', borderWidth: 2, borderColor: '#FFEBEB', borderRadius: 20, padding: 18, justifyContent: 'center', alignItems: 'center', marginBottom: 6, position: 'relative' },
+  optionButtonB: { backgroundColor: '#F9FCFF', borderColor: '#EBF4FF', marginBottom: 0, marginTop: 6 },
+  optionBadgeA: { position: 'absolute', top: 10, left: 12, backgroundColor: '#FEE2E2', paddingHorizontal: 8, paddingVertical: 2, borderRadius: 8 },
+  optionBadgeB: { position: 'absolute', top: 10, left: 12, backgroundColor: '#DBEAFE', paddingHorizontal: 8, paddingVertical: 2, borderRadius: 8 },
+  optionBadgeText: { fontSize: 10, fontWeight: '700', color: '#4B5563' },
+  disabledOption: { opacity: 0.9 },
+  questionText: { fontSize: 15, fontWeight: '900', color: '#1A1A1A', textAlign: 'center', marginBottom: 4, marginTop: 10 },
+  descText: { fontSize: 12, color: '#6B7280', textAlign: 'center', paddingHorizontal: 10 },
+  statText: { fontSize: 20, fontWeight: '900', color: '#EF4444', marginTop: 8 },
+  statTextB: { color: '#3B82F6' },
+  vsCircle: { position: 'absolute', top: '50%', left: '50%', transform: [{ translateX: -18 }, { translateY: -18 }], width: 36, height: 36, borderRadius: 18, backgroundColor: '#1A1A1A', justifyContent: 'center', alignItems: 'center', zIndex: 10 },
+  vsText: { color: '#FFF', fontSize: 11, fontWeight: '900' },
+  nextButton: { backgroundColor: '#1A1A1A', paddingVertical: 14, borderRadius: 14, marginTop: 14, alignItems: 'center' },
+  nextButtonText: { color: '#FFF', fontSize: 14, fontWeight: '700' },
 });

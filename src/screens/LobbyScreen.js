@@ -1,166 +1,59 @@
-import React, { useEffect, useState } from 'react';
-import {
-  View, Text, TouchableOpacity, StyleSheet,
-  FlatList, Alert,
-} from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { ref, onValue, update, remove } from 'firebase/database';
-import { db } from '../../firebase';
+import React, { useEffect } from 'react';
+import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
+import { BALANCE_QUESTIONS } from '../data/balanceQuestions';
+import ScreenShell from '../components/ScreenShell';
 
-export default function LobbyScreen({ route, navigation }) {
-  const { roomCode, nickname, isHost } = route.params;
-  const [players, setPlayers] = useState([]);
-  const [host, setHost] = useState('');
-  const [status, setStatus] = useState('lobby');
-
+export default function LobbyScreen({ navigation }) {
   useEffect(() => {
-    const roomRef = ref(db, `rooms/${roomCode}`);
-    const unsub = onValue(roomRef, (snap) => {
-      if (!snap.exists()) {
-        Alert.alert('방이 사라졌어요');
-        navigation.replace('Home');
-        return;
-      }
-      const data = snap.val();
-      setStatus(data.status);
-      setHost(data.host || '');
-      setPlayers(Object.keys(data.players || {}));
-
-      if (data.status === 'playing') {
-        navigation.replace('Game', { roomCode, nickname, isHost });
-      }
-    });
-    return () => unsub();
+    if (typeof window === 'undefined') return;
+    const roomId = new URLSearchParams(window.location.search).get('room');
+    if (roomId) navigation.replace('Game', { roomId });
   }, []);
 
-  async function handleStart() {
-    if (players.length < 2) {
-      Alert.alert('앗!', '최소 2명이 있어야 게임을 시작할 수 있어요.');
-      return;
-    }
-    await update(ref(db, `rooms/${roomCode}`), { status: 'playing', currentQuestion: 0 });
-  }
-
-  async function handleLeave() {
-    await remove(ref(db, `rooms/${roomCode}/players/${nickname}`));
-    if (isHost) await remove(ref(db, `rooms/${roomCode}`));
-    navigation.replace('Home');
-  }
+  const startGame = (type) => {
+    const filtered = BALANCE_QUESTIONS.filter(q => q.type === type);
+    const shuffled = [...filtered].sort(() => 0.5 - Math.random());
+    const questions = shuffled.slice(0, 20);
+    navigation.navigate('Game', { questions, category: type });
+  };
 
   return (
-    <SafeAreaView style={styles.container}>
-      <View style={styles.header}>
-        <View>
-          <Text style={styles.title}>대기실 🍕</Text>
-          <Text style={styles.sub}>친구들을 기다리는 중...</Text>
-        </View>
-        <TouchableOpacity onPress={handleLeave}>
-          <Text style={styles.leaveText}>나가기</Text>
+    <ScreenShell>
+      <View style={styles.landingZone}>
+        <Text style={styles.mainTitle}>
+          🤔 어떤 밸런스 게임을{'\n'}플레이하시겠습니까?
+        </Text>
+
+        <TouchableOpacity style={[styles.largeCard, styles.coupleCard]} onPress={() => startGame('연인')}>
+          <Text style={styles.cardEmoji}>💕</Text>
+          <Text style={styles.cardTitle}>연애 · 사랑</Text>
+          <Text style={styles.cardSub}>환상과 현실 사이, 우리가 사랑할 때 마주하는 순간들</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity style={[styles.largeCard, styles.friendCard]} onPress={() => startGame('친구')}>
+          <Text style={styles.cardEmoji}>🤝</Text>
+          <Text style={styles.cardTitle}>우정 · 관계</Text>
+          <Text style={styles.cardSub}>술자리 의리 테스트부터 숨겨진 손절 타이밍까지</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity style={[styles.largeCard, styles.foodCard]} onPress={() => startGame('음식')}>
+          <Text style={styles.cardEmoji}>🍕</Text>
+          <Text style={styles.cardTitle}>푸드 · 취향</Text>
+          <Text style={styles.cardSub}>치킨 뼈순살부터 민초파까지, 절대 양보 못 할 맛의 기준</Text>
         </TouchableOpacity>
       </View>
-
-      {/* 방 코드 */}
-      <View style={styles.codeCard}>
-        <Text style={styles.codeLabel}>방 코드</Text>
-        <Text style={styles.code}>{roomCode}</Text>
-        <Text style={styles.codeHint}>친구에게 이 코드를 알려줘!</Text>
-      </View>
-
-      {/* 참가자 목록 */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>참가자 {players.length}/10</Text>
-        <FlatList
-          data={players}
-          keyExtractor={(item) => item}
-          renderItem={({ item }) => (
-            <View style={styles.playerRow}>
-              <View style={[styles.dot, item === nickname && styles.dotMe]} />
-              <Text style={[styles.playerName, item === nickname && styles.playerNameMe]}>
-                {item}
-                {item === nickname && '  (나)'}
-              </Text>
-              {item === host && <Text style={styles.hostBadge}>방장</Text>}
-            </View>
-          )}
-          style={styles.list}
-        />
-      </View>
-
-      {isHost ? (
-        <TouchableOpacity
-          style={[styles.btn, players.length < 2 && styles.btnDisabled]}
-          onPress={handleStart}
-          disabled={players.length < 2}
-          activeOpacity={0.85}
-        >
-          <Text style={styles.btnText}>🎮 게임 시작!</Text>
-        </TouchableOpacity>
-      ) : (
-        <View style={styles.waitingBox}>
-          <Text style={styles.waitingText}>⏳ 방장이 게임을 시작할 때까지 기다려줘...</Text>
-        </View>
-      )}
-    </SafeAreaView>
+    </ScreenShell>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#141414', paddingHorizontal: 24, paddingTop: 20 },
-  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 28 },
-  title: { fontSize: 30, fontWeight: '900', color: '#fff' },
-  sub: { color: '#888', fontSize: 14, marginTop: 4 },
-  leaveText: { color: '#E63946', fontSize: 15, fontWeight: '700' },
-  codeCard: {
-    backgroundColor: '#E63946',
-    borderRadius: 20,
-    padding: 24,
-    alignItems: 'center',
-    marginBottom: 28,
-  },
-  codeLabel: { color: 'rgba(255,255,255,0.7)', fontSize: 13, fontWeight: '600', marginBottom: 8 },
-  code: { fontSize: 44, fontWeight: '900', color: '#fff', letterSpacing: 8 },
-  codeHint: { color: 'rgba(255,255,255,0.6)', fontSize: 13, marginTop: 8 },
-  section: { flex: 1 },
-  sectionTitle: { color: '#FFD60A', fontSize: 13, fontWeight: '700', letterSpacing: 1, marginBottom: 14 },
-  list: { flex: 1 },
-  playerRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#2A2A2A',
-    borderRadius: 12,
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    marginBottom: 8,
-    gap: 10,
-  },
-  dot: { width: 10, height: 10, borderRadius: 5, backgroundColor: '#444' },
-  dotMe: { backgroundColor: '#FFD60A' },
-  playerName: { flex: 1, color: '#ccc', fontSize: 16, fontWeight: '600' },
-  playerNameMe: { color: '#FFD60A' },
-  hostBadge: {
-    backgroundColor: '#E63946',
-    color: '#fff',
-    fontSize: 11,
-    fontWeight: '700',
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 6,
-  },
-  btn: {
-    backgroundColor: '#FFD60A',
-    borderRadius: 16,
-    paddingVertical: 18,
-    alignItems: 'center',
-    marginBottom: 20,
-  },
-  btnDisabled: { opacity: 0.4 },
-  btnText: { color: '#1A1A1A', fontSize: 18, fontWeight: '800' },
-  waitingBox: {
-    backgroundColor: '#2A2A2A',
-    borderRadius: 14,
-    padding: 18,
-    alignItems: 'center',
-    marginBottom: 20,
-  },
-  waitingText: { color: '#888', fontSize: 14 },
+  landingZone: { width: '100%' },
+  mainTitle: { fontSize: 22, fontWeight: '800', color: '#1A1A1A', textAlign: 'center', marginBottom: 20, lineHeight: 32 },
+  largeCard: { borderWidth: 2, borderRadius: 20, padding: 16, marginBottom: 12, alignItems: 'center' },
+  coupleCard: { backgroundColor: '#FFF5F5', borderColor: '#FFE3E3' },
+  friendCard: { backgroundColor: '#F0F7FF', borderColor: '#D0E7FF' },
+  foodCard: { backgroundColor: '#FFFBEB', borderColor: '#FEF3C7' },
+  cardEmoji: { fontSize: 32, marginBottom: 4 },
+  cardTitle: { fontSize: 18, fontWeight: '800', color: '#1A1A1A', marginBottom: 2 },
+  cardSub: { fontSize: 12, color: '#666', textAlign: 'center' },
 });
