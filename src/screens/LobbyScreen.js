@@ -7,7 +7,10 @@ export default function LobbyScreen({ navigation }) {
   useEffect(() => {
     if (typeof window === 'undefined') return;
     const roomId = new URLSearchParams(window.location.search).get('room');
-    if (roomId) navigation.replace('Game', { roomId });
+    if (roomId) {
+      window.history.replaceState({}, document.title, window.location.pathname);
+      navigation.replace('Game', { roomId });
+    }
   }, []);
 
   const startGame = (type) => {

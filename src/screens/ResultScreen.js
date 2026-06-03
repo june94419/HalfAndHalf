@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import {
   View, Text, TouchableOpacity, TextInput,
   ScrollView, StyleSheet, ActivityIndicator,
+  Alert, Platform,
 } from 'react-native';
 import { signInAnonymously } from 'firebase/auth';
 import { ref, push, set, get, update, serverTimestamp } from 'firebase/database';
@@ -19,11 +20,11 @@ export default function ResultScreen({ route, navigation }) {
 
   // ── UserA 상태 ────────────────────────────────────────────────
   const [createdRoomId, setCreatedRoomId] = useState(null);
-  const [roomStatus, setRoomStatus] = useState('creating'); // 'creating'|'done'|'error'
+  const [roomStatus, setRoomStatus] = useState('creating');
   const [copied, setCopied] = useState(false);
 
   // ── UserB 상태 ────────────────────────────────────────────────
-  const [compareStatus, setCompareStatus] = useState('saving'); // 'saving'|'ready'|'error'
+  const [compareStatus, setCompareStatus] = useState('saving');
   const [comparison, setComparison] = useState(null);
   const [compromises, setCompromises] = useState({});
   const [savingCompromise, setSavingCompromise] = useState(false);
@@ -32,6 +33,26 @@ export default function ResultScreen({ route, navigation }) {
   useEffect(() => {
     isUserB ? setupUserB() : createRoom();
   }, []);
+
+  // ── ?room= 파라미터를 지우고 로비로 이동 ─────────────────────
+  const goHome = () => {
+    if (typeof window !== 'undefined' && window.history) {
+      window.history.replaceState({}, document.title, window.location.pathname);
+    }
+    navigation.navigate('Lobby');
+  };
+
+  // ── 가치관 백서 알림 ──────────────────────────────────────────
+  const handleArchivePress = () => {
+    const title = '우리만의 가치관 백서';
+    const message =
+      '두 분이 치열하게 토론하고 합의한 소중한 가치관 데이터는 마이페이지에 보관됩니다.\n마이페이지 기능은 정식 출시 후 로그인 시 제공됩니다! 💕';
+    if (Platform.OS === 'web') {
+      window.alert(`${title}\n\n${message}`);
+    } else {
+      Alert.alert(title, message);
+    }
+  };
 
   // ── UserA: 방 생성 ────────────────────────────────────────────
   const createRoom = async () => {
@@ -131,6 +152,7 @@ export default function ResultScreen({ route, navigation }) {
           <Text style={styles.subtitle}>
             {CATEGORY_LABEL[passedCategory] || passedCategory} 카테고리의{'\n'}모든 밸런스 게임을 마쳤어요.
           </Text>
+
           <View style={styles.shareSection}>
             {roomStatus === 'creating' && (
               <Text style={styles.dimText}>공유 링크 생성 중...</Text>
@@ -152,7 +174,12 @@ export default function ResultScreen({ route, navigation }) {
               </TouchableOpacity>
             )}
           </View>
-          <TouchableOpacity style={styles.ghostBtn} onPress={() => navigation.navigate('Lobby')}>
+
+          <TouchableOpacity style={styles.archiveBtn} onPress={handleArchivePress}>
+            <Text style={styles.archiveBtnText}>🔒 우리만의 가치관 백서 확인하기</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity style={styles.ghostBtn} onPress={goHome}>
             <Text style={styles.ghostBtnText}>홈으로 돌아가기</Text>
           </TouchableOpacity>
         </View>
@@ -169,7 +196,7 @@ export default function ResultScreen({ route, navigation }) {
             <>
               <Text style={styles.emoji}>😢</Text>
               <Text style={styles.errorText}>결과를 불러오지 못했어요.</Text>
-              <TouchableOpacity style={[styles.ghostBtn, { marginTop: 24 }]} onPress={() => navigation.navigate('Lobby')}>
+              <TouchableOpacity style={[styles.ghostBtn, { marginTop: 24 }]} onPress={goHome}>
                 <Text style={styles.ghostBtnText}>홈으로 돌아가기</Text>
               </TouchableOpacity>
             </>
@@ -276,7 +303,11 @@ export default function ResultScreen({ route, navigation }) {
           </TouchableOpacity>
         )}
 
-        <TouchableOpacity style={styles.ghostBtn} onPress={() => navigation.navigate('Lobby')}>
+        <TouchableOpacity style={styles.archiveBtn} onPress={handleArchivePress}>
+          <Text style={styles.archiveBtnText}>🔒 우리만의 가치관 백서 확인하기</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity style={styles.ghostBtn} onPress={goHome}>
           <Text style={styles.ghostBtnText}>홈으로 돌아가기</Text>
         </TouchableOpacity>
       </ScrollView>
@@ -296,11 +327,13 @@ const styles = StyleSheet.create({
   primaryBtnGreen: { backgroundColor: '#059669' },
   primaryBtnText: { color: '#FFF', fontSize: 16, fontWeight: '800' },
   primaryBtnSub: { color: 'rgba(255,255,255,0.55)', fontSize: 11, marginTop: 4 },
+  archiveBtn: { width: '100%', backgroundColor: '#FFFFFF', borderWidth: 1.5, borderColor: '#E5E7EB', paddingVertical: 14, borderRadius: 14, alignItems: 'center', marginBottom: 10 },
+  archiveBtnText: { color: '#4B5563', fontSize: 14, fontWeight: '700' },
   ghostBtn: { width: '100%', borderWidth: 1.5, borderColor: '#E5E7EB', paddingVertical: 14, borderRadius: 14, alignItems: 'center' },
-  ghostBtnText: { color: '#6B7280', fontSize: 15, fontWeight: '600' },
+  ghostBtnText: { color: '#9CA3AF', fontSize: 14, fontWeight: '600' },
 
   // ── UserA: 공유 ──────────────────────────────────────────────
-  shareSection: { width: '100%', marginBottom: 20, minHeight: 80, justifyContent: 'center' },
+  shareSection: { width: '100%', marginBottom: 16, minHeight: 80, justifyContent: 'center' },
 
   // ── UserB: 비교 스크롤 레이아웃 ──────────────────────────────
   scrollShell: { paddingHorizontal: 0, paddingTop: 0, paddingBottom: 0 },

@@ -16,13 +16,21 @@ export default function GameScreen({ route, navigation }) {
   const [voteStats, setVoteStats] = useState({ a: 0, b: 0 });
   const [history, setHistory] = useState([]);
 
+  // ?room= 파라미터를 지우고 로비로 이동
+  const handleGoLobby = () => {
+    if (typeof window !== 'undefined' && window.history) {
+      window.history.replaceState({}, document.title, window.location.pathname);
+    }
+    navigation.navigate('Lobby');
+  };
+
   // roomId가 있으면 Firebase에서 방 데이터를 읽어 질문 세트를 구성
   useEffect(() => {
     if (!roomId) return;
     (async () => {
       try {
         const snap = await get(ref(db, `rooms/${roomId}`));
-        if (!snap.exists()) { navigation.navigate('Lobby'); return; }
+        if (!snap.exists()) { handleGoLobby(); return; }
         const data = snap.val();
         const roomQuestions = Object.keys(data.answersA)
           .map(idStr => BALANCE_QUESTIONS.find(q => q.id === Number(idStr)))
@@ -32,7 +40,7 @@ export default function GameScreen({ route, navigation }) {
         setLoading(false);
       } catch (e) {
         console.error('Failed to load room:', e);
-        navigation.navigate('Lobby');
+        handleGoLobby();
       }
     })();
   }, []);
@@ -57,7 +65,7 @@ export default function GameScreen({ route, navigation }) {
   };
 
   const resetButton = (
-    <TouchableOpacity style={styles.resetButton} onPress={() => navigation.navigate('Lobby')}>
+    <TouchableOpacity style={styles.resetButton} onPress={handleGoLobby}>
       <Text style={styles.resetText}>처음으로</Text>
     </TouchableOpacity>
   );
