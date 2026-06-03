@@ -39,3 +39,10 @@ yarn-error.*
 # generated native folders
 /ios
 /android
+
+# Firebase native config (contains private keys)
+google-services.json
+GoogleService-Info.plist
+
+# Claude Code local settings
+.claude/settings.local.json
