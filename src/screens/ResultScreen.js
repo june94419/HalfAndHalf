@@ -78,10 +78,40 @@ export default function ResultScreen({ route, navigation }) {
   };
 
   const handleShare = async () => {
-    const base = typeof window !== 'undefined' ? window.location.origin : 'https://halfandhalf.app';
-    await Clipboard.setStringAsync(`${base}?room=${createdRoomId}`);
+    const base = typeof window !== 'undefined'
+      ? window.location.origin
+      : 'https://half-and-half-nine.vercel.app';
+    const shareUrl = `${base}?room=${createdRoomId}`;
+
+    // 클립보드 복사 (항상 실행)
+    await Clipboard.setStringAsync(shareUrl);
     setCopied(true);
     setTimeout(() => setCopied(false), 2500);
+
+    // 카카오톡 공유 (웹 전용)
+    if (Platform.OS === 'web' && typeof window !== 'undefined') {
+      const Kakao = window.Kakao;
+      if (!Kakao) return;
+      if (!Kakao.isInitialized()) {
+        Kakao.init('5794780a6ba882582fb21d5794ae3007');
+      }
+      Kakao.Share.sendDefault({
+        objectType: 'feed',
+        content: {
+          title: '🤔 우리 연애 가치관은 몇 %나 맞을까?',
+          description:
+            '연인이 푸드·데이트·재무 취향 20문제를 풀고 기다리고 있어요. 지금 들어와서 조율해 보세요! 💕',
+          imageUrl: 'https://half-and-half-nine.vercel.app/favicon.ico',
+          link: { mobileWebUrl: shareUrl, webUrl: shareUrl },
+        },
+        buttons: [
+          {
+            title: '가치관 조율하러 가기',
+            link: { mobileWebUrl: shareUrl, webUrl: shareUrl },
+          },
+        ],
+      });
+    }
   };
 
   // ── UserB: answersB 저장 → 비교 데이터 구성 ──────────────────

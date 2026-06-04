@@ -8,13 +8,13 @@ import HalfPizza from '../components/HalfPizza';
 import { useAuth } from '../context/AuthContext';
 
 export default function LoginScreen() {
-  const { signInWithGoogle } = useAuth();
+  const { signInWithKakao } = useAuth();
   const [signingIn, setSigningIn] = useState(false);
 
-  const handleGoogleLogin = async () => {
+  const handleKakaoLogin = async () => {
     setSigningIn(true);
     try {
-      await signInWithGoogle();
+      await signInWithKakao();
     } finally {
       setSigningIn(false);
     }
@@ -39,25 +39,20 @@ export default function LoginScreen() {
         <View style={styles.loginArea}>
           <Text style={styles.loginPrompt}>로그인하고 게임 시작!</Text>
 
-          {/* Google 로그인 */}
+          {/* 카카오 로그인 */}
           <TouchableOpacity
-            style={[styles.socialBtn, styles.googleBtn, signingIn && styles.btnDisabled]}
-            onPress={handleGoogleLogin}
+            style={[styles.socialBtn, styles.kakaoBtn, signingIn && styles.btnDisabled]}
+            onPress={handleKakaoLogin}
             activeOpacity={0.85}
             disabled={signingIn}
           >
             {signingIn ? (
-              <ActivityIndicator color="#1A1A1A" size="small" />
+              <ActivityIndicator color="#191919" size="small" />
             ) : (
-              <Text style={styles.googleIcon}>G</Text>
+              <Text style={styles.kakaoIcon}>K</Text>
             )}
-            <Text style={styles.googleBtnText}>Google로 계속하기</Text>
-          </TouchableOpacity>
-
-          {/* TODO: 카카오 로그인 */}
-          {/* <TouchableOpacity style={[styles.socialBtn, styles.kakaoBtn]}>
             <Text style={styles.kakaoBtnText}>카카오로 계속하기</Text>
-          </TouchableOpacity> */}
+          </TouchableOpacity>
 
           {/* TODO: Apple 로그인 (iOS App Store 정책상 필수) */}
           {/* <TouchableOpacity style={[styles.socialBtn, styles.appleBtn]}>
@@ -145,19 +140,19 @@ const styles = StyleSheet.create({
     opacity: 0.6,
   },
 
-  // Google
-  googleBtn: {
-    backgroundColor: '#FFFFFF',
+  // Kakao
+  kakaoBtn: {
+    backgroundColor: '#FEE500',
   },
-  googleIcon: {
+  kakaoIcon: {
     fontSize: 18,
-    fontWeight: '800',
-    color: '#4285F4',
+    fontWeight: '900',
+    color: '#191919',
   },
-  googleBtnText: {
+  kakaoBtnText: {
     fontSize: 16,
     fontWeight: '700',
-    color: '#1A1A1A',
+    color: 'rgba(0,0,0,0.85)',
   },
 
   // 이용약관
