@@ -1,5 +1,5 @@
 import React, { useEffect } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, Image } from 'react-native';
 import { BALANCE_QUESTIONS } from '../data/balanceQuestions';
 import ScreenShell from '../components/ScreenShell';
 
@@ -23,6 +23,11 @@ export default function LobbyScreen({ navigation }) {
   return (
     <ScreenShell>
       <View style={styles.landingZone}>
+        <Image
+          source={require('../../assets/main-logo.png')}
+          style={styles.mainLogo}
+          resizeMode="contain"
+        />
         <Text style={styles.mainTitle}>
           🤔 어떤 밸런스 게임을{'\n'}플레이하시겠습니까?
         </Text>
@@ -50,7 +55,8 @@ export default function LobbyScreen({ navigation }) {
 }
 
 const styles = StyleSheet.create({
-  landingZone: { width: '100%' },
+  landingZone: { width: '100%', alignItems: 'center' },
+  mainLogo: { width: '100%', maxWidth: 320, height: 180, marginBottom: 16 },
   mainTitle: { fontSize: 22, fontWeight: '800', color: '#1A1A1A', textAlign: 'center', marginBottom: 20, lineHeight: 32 },
   largeCard: { borderWidth: 2, borderRadius: 20, padding: 16, marginBottom: 12, alignItems: 'center' },
   coupleCard: { backgroundColor: '#FFF5F5', borderColor: '#FFE3E3' },
