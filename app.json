@@ -24,7 +24,12 @@
     },
     "web": {
       "favicon": "./assets/favicon.png",
-      "bundler": "metro"
+      "icon": "./assets/icon.png",
+      "bundler": "metro",
+      "name": "반반",
+      "shortName": "반반",
+      "backgroundColor": "#141414",
+      "themeColor": "#141414"
     },
     "plugins": [
       "expo-web-browser",
