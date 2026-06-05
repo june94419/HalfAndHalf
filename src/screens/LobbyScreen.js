@@ -1,5 +1,5 @@
 import React, { useEffect } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Image } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, Image, Platform } from 'react-native';
 import { BALANCE_QUESTIONS } from '../data/balanceQuestions';
 import ScreenShell from '../components/ScreenShell';
 
@@ -24,7 +24,11 @@ export default function LobbyScreen({ navigation }) {
     <ScreenShell>
       <View style={styles.landingZone}>
         <Image
-          source={require('../../assets/main-logo.png')}
+          source={
+            Platform.OS === 'web'
+              ? { uri: '/main-logo.png' }
+              : require('../../assets/main-logo.png')
+          }
           style={styles.mainLogo}
           resizeMode="contain"
         />
