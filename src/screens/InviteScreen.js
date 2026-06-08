@@ -1,30 +1,74 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, ActivityIndicator, TouchableOpacity, StyleSheet } from 'react-native';
+import {
+  View, Text, ActivityIndicator, TouchableOpacity, StyleSheet,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { ref, get } from 'firebase/database';
 import { db } from '../../firebase';
+import { useAuth } from '../context/AuthContext';
+import { BALANCE_QUESTIONS } from '../data/balanceQuestions';
+
+// App.js 의 PostLoginHandler 와 공유하는 스토리지 키
+export const PENDING_CODE_KEY = 'banban_pending_couple_code';
 
 export default function InviteScreen({ route, navigation }) {
   const { code } = route.params ?? {};
-  const [status, setStatus] = useState('loading'); // 'loading' | 'found' | 'invalid'
+  const { user, signInWithKakao } = useAuth();
 
+  const [status, setCoupleStatus] = useState('loading'); // 'loading' | 'ready' | 'invalid'
+  const [coupleData, setCoupleData]   = useState(null);
+  const [isLoggingIn, setIsLoggingIn] = useState(false);
+
+  // ── 1. couples/${code} fetch ─────────────────────────────────────
   useEffect(() => {
-    if (!code) { setStatus('invalid'); return; }
+    if (!code) { setCoupleStatus('invalid'); return; }
     (async () => {
       try {
         const snap = await get(ref(db, `couples/${code}`));
-        if (!snap.exists()) { setStatus('invalid'); return; }
-        // TODO: 매칭 플로우 진입 — 상대방 답변 저장 및 비교 화면으로 이동
-        // navigation.replace('MatchGame', { coupleCode: code, coupleData: snap.val() });
-        console.log('[InviteScreen] 커플 코드 확인됨:', code, snap.val());
-        setStatus('found');
+        if (!snap.exists()) { setCoupleStatus('invalid'); return; }
+        setCoupleData(snap.val());
+        setCoupleStatus('ready');
       } catch (e) {
-        console.error('[InviteScreen] 코드 조회 실패:', e);
-        setStatus('invalid');
+        console.error('[InviteScreen] DB 조회 실패:', e);
+        setCoupleStatus('invalid');
       }
     })();
   }, [code]);
 
+  // ── 3. 로그인 완료 감지 → GameScreen 진입 ───────────────────────
+  // 이미 로그인된 채로 초대 링크를 열었거나,
+  // PostLoginHandler 가 복귀 후 이 화면으로 다시 라우팅한 경우 모두 처리
+  useEffect(() => {
+    if (!user || !coupleData || status !== 'ready') return;
+
+    const answersMap    = coupleData.creatorAnswers ?? {};
+    const questionIds   = Object.keys(answersMap).map(Number);
+    const questions     = questionIds
+      .map(id => BALANCE_QUESTIONS.find(q => q.id === id))
+      .filter(Boolean);
+    // creatorAnswers 의 첫 번째 질문 type 으로 카테고리 추론
+    const category = questions[0]?.type ?? '돈';
+
+    navigation.replace('Game', {
+      coupleCode: code,
+      mode:       'partner',
+      questions,
+      category,
+    });
+  }, [user, coupleData, status]);
+
+  // ── 5. 카카오 로그인 버튼 핸들러 ────────────────────────────────
+  const handleKakaoLogin = () => {
+    if (!code) return;
+    setIsLoggingIn(true);
+    try {
+      // 카카오 리다이렉트 후 복귀 시 PostLoginHandler 가 이 코드를 읽어 복원
+      localStorage.setItem(PENDING_CODE_KEY, code);
+    } catch {}
+    signInWithKakao(); // 전체 페이지 리다이렉트
+  };
+
+  // ── 로딩 중 ──────────────────────────────────────────────────────
   if (status === 'loading') {
     return (
       <SafeAreaView style={styles.container}>
@@ -34,37 +78,86 @@ export default function InviteScreen({ route, navigation }) {
     );
   }
 
+  // ── 유효하지 않은 코드 ───────────────────────────────────────────
   if (status === 'invalid') {
     return (
       <SafeAreaView style={styles.container}>
         <Text style={styles.emoji}>😢</Text>
-        <Text style={styles.title}>유효하지 않은 초청장이에요</Text>
-        <Text style={styles.sub}>링크가 만료됐거나 올바르지 않아요.{'\n'}연인에게 다시 공유해달라고 부탁해보세요.</Text>
-        <TouchableOpacity style={styles.btn} onPress={() => navigation.replace('Lobby')}>
-          <Text style={styles.btnText}>홈으로 돌아가기</Text>
+        <Text style={styles.title}>만료되거나 잘못된{'\n'}초대장입니다.</Text>
+        <Text style={styles.sub}>
+          링크가 만료됐거나 올바르지 않아요.{'\n'}
+          연인에게 다시 공유해달라고 부탁해보세요.
+        </Text>
+        <TouchableOpacity style={styles.ghostBtn} onPress={() => navigation.replace('Lobby')}>
+          <Text style={styles.ghostBtnText}>로비로 가기</Text>
         </TouchableOpacity>
       </SafeAreaView>
     );
   }
 
-  // status === 'found' — TODO: 실제 매칭 화면으로 교체 예정
+  // ── 유효한 초청장 ────────────────────────────────────────────────
   return (
     <SafeAreaView style={styles.container}>
-      <Text style={styles.emoji}>💍</Text>
-      <Text style={styles.title}>초청장이 확인됐어요!</Text>
-      <Text style={styles.sub}>커플 코드: {code}</Text>
-      <Text style={styles.comingSoon}>매칭 화면은 곧 연결됩니다.</Text>
+      <View style={styles.card}>
+        <Text style={styles.badge}>💌 초청장 도착</Text>
+        <Text style={styles.emoji}>💍</Text>
+        <Text style={styles.title}>결혼 가치관 초청장이{'\n'}도착했습니다!</Text>
+        <Text style={styles.sub}>
+          연인이 결혼 가치관 테스트 20문항을 완료했어요.{'\n'}
+          로그인하고 속마음을 매칭해보세요.
+        </Text>
+      </View>
+
+      <TouchableOpacity
+        style={[styles.kakaoBtn, isLoggingIn && styles.kakaoBtnDisabled]}
+        onPress={handleKakaoLogin}
+        disabled={isLoggingIn}
+        activeOpacity={0.85}
+      >
+        {isLoggingIn
+          ? <ActivityIndicator color="#191600" />
+          : <Text style={styles.kakaoBtnText}>💬 카카오 로그인하고 시작하기</Text>}
+      </TouchableOpacity>
+
+      <TouchableOpacity style={styles.ghostBtn} onPress={() => navigation.replace('Lobby')}>
+        <Text style={styles.ghostBtnText}>나중에 할게요</Text>
+      </TouchableOpacity>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container:    { flex: 1, backgroundColor: '#141414', justifyContent: 'center', alignItems: 'center', paddingHorizontal: 32 },
-  loadingText:  { color: '#888', fontSize: 15, marginTop: 16 },
-  emoji:        { fontSize: 56, marginBottom: 16 },
-  title:        { fontSize: 22, fontWeight: '900', color: '#FFFFFF', textAlign: 'center', marginBottom: 10 },
-  sub:          { fontSize: 14, color: '#888', textAlign: 'center', lineHeight: 22, marginBottom: 32 },
-  comingSoon:   { fontSize: 13, color: '#FFD60A', fontWeight: '700' },
-  btn:          { backgroundColor: '#1F1F1F', borderRadius: 14, paddingVertical: 14, paddingHorizontal: 32 },
-  btnText:      { color: '#888', fontSize: 15, fontWeight: '600' },
+  container: {
+    flex: 1, backgroundColor: '#141414',
+    justifyContent: 'center', alignItems: 'center',
+    paddingHorizontal: 28, gap: 12,
+  },
+  loadingText: { color: '#888', fontSize: 15, marginTop: 16 },
+
+  card: {
+    width: '100%', backgroundColor: '#1F1F1F',
+    borderRadius: 24, padding: 28, alignItems: 'center',
+    borderWidth: 1.5, borderColor: '#FFD60A',
+    marginBottom: 8,
+  },
+  badge: { color: '#FFD60A', fontSize: 12, fontWeight: '800', letterSpacing: 1, marginBottom: 16 },
+  emoji: { fontSize: 52, marginBottom: 12 },
+  title: {
+    fontSize: 22, fontWeight: '900', color: '#FFFFFF',
+    textAlign: 'center', lineHeight: 32, marginBottom: 12,
+  },
+  sub: { fontSize: 14, color: '#888', textAlign: 'center', lineHeight: 22 },
+
+  kakaoBtn: {
+    width: '100%', backgroundColor: '#FEE500',
+    paddingVertical: 18, borderRadius: 16, alignItems: 'center',
+  },
+  kakaoBtnDisabled: { opacity: 0.5 },
+  kakaoBtnText: { color: '#191600', fontSize: 16, fontWeight: '900' },
+
+  ghostBtn: {
+    width: '100%', borderWidth: 1.5, borderColor: '#2A2A2A',
+    paddingVertical: 14, borderRadius: 14, alignItems: 'center',
+  },
+  ghostBtnText: { color: '#555', fontSize: 14, fontWeight: '600' },
 });
