@@ -1,16 +1,17 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, ActivityIndicator } from 'react-native';
-import { get, ref } from 'firebase/database';
-import { db } from '../../firebase';
+import { get, ref, update } from 'firebase/database';
+import { auth, db } from '../../firebase';
 import { BALANCE_QUESTIONS } from '../data/balanceQuestions';
 import ScreenShell from '../components/ScreenShell';
 
 export default function GameScreen({ route, navigation }) {
-  const { questions: passedQuestions, category: passedCategory, roomId } = route.params;
+  const { questions: passedQuestions, category: passedCategory, roomId, coupleCode, mode } = route.params;
 
   const [questions, setQuestions] = useState(passedQuestions ?? []);
   const [category, setCategory] = useState(passedCategory ?? '');
   const [loading, setLoading] = useState(!!roomId);
+  const [submitting, setSubmitting] = useState(false);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [voted, setVoted] = useState(false);
   const [voteStats, setVoteStats] = useState({ a: 0, b: 0 });
@@ -55,10 +56,37 @@ export default function GameScreen({ route, navigation }) {
     setHistory(prev => [...prev, { questionId: currentQuestion.id, choice }]);
   };
 
+  // ── 파트너 모드 제출: couples/ 업데이트 후 ResultScreen 이동 ──
+  const handleSubmit = async (finalHistory) => {
+    setSubmitting(true);
+    try {
+      const partnerAnswers = finalHistory.reduce((acc, { questionId, choice }) => {
+        acc[questionId] = choice;
+        return acc;
+      }, {});
+      await update(ref(db, `couples/${coupleCode}`), {
+        partnerId:      auth.currentUser?.uid ?? null,
+        partnerAnswers,
+        status:         'completed',
+      });
+      navigation.replace('Result', { coupleCode });
+    } catch (e) {
+      console.error('[GameScreen] 파트너 제출 실패:', e);
+      navigation.replace('Result', { coupleCode });
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
   const handleNext = () => {
     if (currentIndex + 1 < questions.length) {
       setCurrentIndex(currentIndex + 1);
       setVoted(false);
+      return;
+    }
+    // 마지막 문제 — 파트너 모드면 DB 업데이트, 아니면 기존 흐름
+    if (mode === 'partner' && coupleCode) {
+      handleSubmit(history);
     } else {
       navigation.replace('Result', roomId ? { roomId, history } : { category, history });
     }
@@ -125,9 +153,17 @@ export default function GameScreen({ route, navigation }) {
         </View>
 
         {voted && (
-          <TouchableOpacity style={styles.nextButton} onPress={handleNext}>
+          <TouchableOpacity
+            style={[styles.nextButton, submitting && styles.nextButtonDisabled]}
+            onPress={handleNext}
+            disabled={submitting}
+          >
             <Text style={styles.nextButtonText}>
-              {currentIndex + 1 === questions.length ? '모든 가치관 결과 확인 🏁' : '다음 질문 매치 ➡️'}
+              {submitting
+                ? '제출 중...'
+                : currentIndex + 1 === questions.length
+                  ? '모든 가치관 결과 확인 🏁'
+                  : '다음 질문 매치 ➡️'}
             </Text>
           </TouchableOpacity>
         )}
@@ -160,5 +196,6 @@ const styles = StyleSheet.create({
   vsCircle: { position: 'absolute', top: '50%', left: '50%', transform: [{ translateX: -18 }, { translateY: -18 }], width: 36, height: 36, borderRadius: 18, backgroundColor: '#1A1A1A', justifyContent: 'center', alignItems: 'center', zIndex: 10 },
   vsText: { color: '#FFF', fontSize: 11, fontWeight: '900' },
   nextButton: { backgroundColor: '#1A1A1A', paddingVertical: 14, borderRadius: 14, marginTop: 14, alignItems: 'center' },
+  nextButtonDisabled: { opacity: 0.5 },
   nextButtonText: { color: '#FFF', fontSize: 14, fontWeight: '700' },
 });
