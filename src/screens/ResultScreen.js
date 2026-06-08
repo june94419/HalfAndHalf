@@ -22,6 +22,8 @@ export default function ResultScreen({ route, navigation }) {
   const [createdRoomId, setCreatedRoomId] = useState(null);
   const [roomStatus, setRoomStatus] = useState('creating');
   const [copied, setCopied] = useState(false);
+  const [kakaoSharing, setKakaoSharing] = useState(false);
+  const [kakaoShared, setKakaoShared] = useState(false);
 
   // ── UserB 상태 ────────────────────────────────────────────────
   const [compareStatus, setCompareStatus] = useState('saving');
@@ -114,6 +116,63 @@ export default function ResultScreen({ route, navigation }) {
     }
   };
 
+  // ── 카톡 공유: 커플 코드 생성 → couples/ 저장 → Kakao 피드 발송 ──
+  const handleKakaoShare = async () => {
+    if (kakaoSharing) return;
+    setKakaoSharing(true);
+    try {
+      // 1. ROOM_ + 대문자 6자리 커플 코드 생성
+      const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+      let coupleCode = 'ROOM_';
+      for (let i = 0; i < 6; i++) coupleCode += chars[Math.floor(Math.random() * 26)];
+
+      // 2. 익명 로그인 & Firebase couples/ 저장
+      const { user } = await signInAnonymously(auth);
+      const creatorAnswers = history.reduce((acc, { questionId, choice }) => {
+        acc[questionId] = choice;
+        return acc;
+      }, {});
+      await set(ref(db, `couples/${coupleCode}`), {
+        creatorId: user.uid,
+        creatorAnswers,
+        status: 'progress',
+        createdAt: new Date().toISOString(),
+        fakePaid: false,
+      });
+
+      // 3. 카카오 공유 (웹 전용)
+      if (Platform.OS === 'web' && typeof window !== 'undefined') {
+        const Kakao = window.Kakao;
+        if (Kakao) {
+          if (!Kakao.isInitialized()) Kakao.init('b9f9b7e040f0bea355301a5149a7512b');
+          const inviteUrl = `https://banban.io.kr/invite?code=${coupleCode}`;
+          Kakao.Share.sendDefault({
+            objectType: 'feed',
+            content: {
+              title: '💍 결혼 가치관 초청장이 도착했습니다.',
+              description: '연인분이 결혼 가치관 테스트 20문항을 완료했습니다! 지금 앱을 깔고 속마음을 매칭해보세요.',
+              imageUrl: 'https://half-and-half-nine.vercel.app/og-image.png',
+              link: { mobileWebUrl: inviteUrl, webUrl: inviteUrl },
+            },
+            buttons: [{ title: '가치관 매칭하러 가기', link: { mobileWebUrl: inviteUrl, webUrl: inviteUrl } }],
+          });
+        }
+      }
+
+      setKakaoShared(true);
+      setTimeout(() => setKakaoShared(false), 3000);
+    } catch (e) {
+      console.error('Kakao share failed:', e);
+      if (Platform.OS === 'web') {
+        window.alert('공유에 실패했어요. 다시 시도해주세요.');
+      } else {
+        Alert.alert('오류', '공유에 실패했어요. 다시 시도해주세요.');
+      }
+    } finally {
+      setKakaoSharing(false);
+    }
+  };
+
   // ── UserB: answersB 저장 → 비교 데이터 구성 ──────────────────
   const setupUserB = async () => {
     try {
@@ -191,17 +250,28 @@ export default function ResultScreen({ route, navigation }) {
               <Text style={styles.errorText}>링크 생성에 실패했습니다.</Text>
             )}
             {roomStatus === 'done' && createdRoomId && (
-              <TouchableOpacity
-                style={[styles.primaryBtn, copied && styles.primaryBtnGreen]}
-                onPress={handleShare}
-              >
-                <Text style={styles.primaryBtnText}>
-                  {copied ? '✅ 링크가 복사됐어요!' : '💌 연인에게 공유하기'}
-                </Text>
-                {!copied && (
-                  <Text style={styles.primaryBtnSub}>고유 링크를 클립보드에 복사해요</Text>
-                )}
-              </TouchableOpacity>
+              <>
+                <TouchableOpacity
+                  style={[styles.kakaoBtn, kakaoShared && styles.primaryBtnGreen]}
+                  onPress={handleKakaoShare}
+                  disabled={kakaoSharing}
+                >
+                  <Text style={styles.kakaoBtnText}>
+                    {kakaoShared ? '✅ 초청장을 보냈어요!' : kakaoSharing ? '전송 중...' : '💬 카톡으로 공유하기'}
+                  </Text>
+                  {!kakaoShared && !kakaoSharing && (
+                    <Text style={styles.kakaoBtnSub}>연인에게 결혼 가치관 초청장 발송</Text>
+                  )}
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.primaryBtn, copied && styles.primaryBtnGreen, { marginTop: 10 }]}
+                  onPress={handleShare}
+                >
+                  <Text style={styles.primaryBtnText}>
+                    {copied ? '✅ 링크가 복사됐어요!' : '🔗 링크 복사하기'}
+                  </Text>
+                </TouchableOpacity>
+              </>
             )}
           </View>
 
@@ -364,6 +434,9 @@ const styles = StyleSheet.create({
 
   // ── UserA: 공유 ──────────────────────────────────────────────
   shareSection: { width: '100%', marginBottom: 16, minHeight: 80, justifyContent: 'center' },
+  kakaoBtn: { width: '100%', backgroundColor: '#FEE500', paddingVertical: 16, borderRadius: 16, alignItems: 'center' },
+  kakaoBtnText: { color: '#191600', fontSize: 16, fontWeight: '800' },
+  kakaoBtnSub: { color: 'rgba(25,22,0,0.5)', fontSize: 11, marginTop: 4 },
 
   // ── UserB: 비교 스크롤 레이아웃 ──────────────────────────────
   scrollShell: { paddingHorizontal: 0, paddingTop: 0, paddingBottom: 0 },
