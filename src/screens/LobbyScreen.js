@@ -36,22 +36,22 @@ export default function LobbyScreen({ navigation }) {
           🤔 어떤 밸런스 게임을{'\n'}플레이하시겠습니까?
         </Text>
 
-        <TouchableOpacity style={[styles.largeCard, styles.coupleCard]} onPress={() => startGame('연인')}>
-          <Text style={styles.cardEmoji}>💕</Text>
-          <Text style={styles.cardTitle}>연애 · 사랑</Text>
-          <Text style={styles.cardSub}>환상과 현실 사이, 우리가 사랑할 때 마주하는 순간들</Text>
+        <TouchableOpacity style={[styles.largeCard, styles.moneyCard]} onPress={() => startGame('돈')}>
+          <Text style={styles.cardEmoji}>💰</Text>
+          <Text style={styles.cardTitle}>돈 &amp; 재테크</Text>
+          <Text style={styles.cardSub}>통장 공개부터 소비 철학까지, 돈 앞에서 드러나는 우리의 민낯</Text>
         </TouchableOpacity>
 
-        <TouchableOpacity style={[styles.largeCard, styles.friendCard]} onPress={() => startGame('친구')}>
-          <Text style={styles.cardEmoji}>🤝</Text>
-          <Text style={styles.cardTitle}>우정 · 관계</Text>
-          <Text style={styles.cardSub}>술자리 의리 테스트부터 숨겨진 손절 타이밍까지</Text>
+        <TouchableOpacity style={[styles.largeCard, styles.familyCard]} onPress={() => startGame('시댁')}>
+          <Text style={styles.cardEmoji}>🏠</Text>
+          <Text style={styles.cardTitle}>시댁 &amp; 처가</Text>
+          <Text style={styles.cardSub}>명절·용돈·동거… 현실 부부의 가장 뜨거운 갈등 지점</Text>
         </TouchableOpacity>
 
-        <TouchableOpacity style={[styles.largeCard, styles.foodCard]} onPress={() => startGame('음식')}>
-          <Text style={styles.cardEmoji}>🍕</Text>
-          <Text style={styles.cardTitle}>푸드 · 취향</Text>
-          <Text style={styles.cardSub}>치킨 뼈순살부터 민초파까지, 절대 양보 못 할 맛의 기준</Text>
+        <TouchableOpacity style={[styles.largeCard, styles.lifeCard]} onPress={() => startGame('라이프')}>
+          <Text style={styles.cardEmoji}>🌿</Text>
+          <Text style={styles.cardTitle}>라이프스타일</Text>
+          <Text style={styles.cardSub}>잠버릇부터 여행 스타일까지, 함께 살아야 보이는 것들</Text>
         </TouchableOpacity>
       </View>
     </ScreenShell>
@@ -63,9 +63,9 @@ const styles = StyleSheet.create({
   mainLogo: { width: '100%', maxWidth: 320, height: 180, marginBottom: 16 },
   mainTitle: { fontSize: 22, fontWeight: '800', color: '#1A1A1A', textAlign: 'center', marginBottom: 20, lineHeight: 32 },
   largeCard: { borderWidth: 2, borderRadius: 20, padding: 16, marginBottom: 12, alignItems: 'center' },
-  coupleCard: { backgroundColor: '#FFF5F5', borderColor: '#FFE3E3' },
-  friendCard: { backgroundColor: '#F0F7FF', borderColor: '#D0E7FF' },
-  foodCard: { backgroundColor: '#FFFBEB', borderColor: '#FEF3C7' },
+  moneyCard: { backgroundColor: '#F0FDF4', borderColor: '#BBF7D0' },
+  familyCard: { backgroundColor: '#FFF7ED', borderColor: '#FED7AA' },
+  lifeCard:   { backgroundColor: '#F5F3FF', borderColor: '#DDD6FE' },
   cardEmoji: { fontSize: 32, marginBottom: 4 },
   cardTitle: { fontSize: 18, fontWeight: '800', color: '#1A1A1A', marginBottom: 2 },
   cardSub: { fontSize: 12, color: '#666', textAlign: 'center' },

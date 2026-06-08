@@ -11,7 +11,7 @@ import { auth, db } from '../../firebase';
 import { BALANCE_QUESTIONS } from '../data/balanceQuestions';
 import ScreenShell from '../components/ScreenShell';
 
-const CATEGORY_LABEL = { '연인': '연애 · 사랑', '친구': '우정 · 관계', '음식': '푸드 · 취향' };
+const CATEGORY_LABEL = { '돈': '돈 & 재테크', '시댁': '시댁 & 처가', '라이프': '라이프스타일' };
 const getChoiceText = (question, choice) => choice === 'A' ? question.questionA : question.questionB;
 
 export default function ResultScreen({ route, navigation }) {
