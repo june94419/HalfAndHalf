@@ -93,6 +93,18 @@
     },
 
     // ────────────────────────────────────────────────────────────
+    // couples — 카톡 초청장 커플 코드 (익명 인증 유저, 최초 1회 생성만 허용)
+    // ────────────────────────────────────────────────────────────
+    "couples": {
+      "$coupleCode": {
+        ".read": true,
+        // 로그인된 유저가 아직 없는 코드에만 최초 1회 쓰기 가능 (덮어쓰기 불가)
+        ".write": "auth != null && !data.exists()",
+        ".validate": "newData.hasChildren(['creatorId', 'creatorAnswers', 'status', 'createdAt', 'fakePaid']) && newData.child('creatorId').val() === auth.uid && newData.child('status').val() === 'progress' && newData.child('fakePaid').isBoolean()"
+      }
+    },
+
+    // ────────────────────────────────────────────────────────────
     // global_stats — 솔로 모드 전 세계 집계 카운터
     // ────────────────────────────────────────────────────────────
     "global_stats": {
