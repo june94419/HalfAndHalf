@@ -87,9 +87,19 @@ export function AuthProvider({ children }) {
   useEffect(() => {
     (async () => {
       try {
-        const params = new URLSearchParams(window.location.search);
-        const code   = params.get('code');
-        const error  = params.get('error');
+        const params   = new URLSearchParams(window.location.search);
+        const code     = params.get('code');
+        const error    = params.get('error');
+        const isInvite = typeof window !== 'undefined' &&
+          (window.location.pathname.startsWith('/invite') || (code && code.startsWith('ROOM_')));
+
+        // ── 커플 초대 링크(ROOM_*)는 카카오 OAuth 처리 대상에서 제외 ─
+        if (isInvite) {
+          const session = loadSession();
+          if (session?.user) setUser(session.user);
+          setLoading(false);
+          return;
+        }
 
         // ── 카카오 리디렉트 콜백 처리 ──────────────────────────────
         if (error) {

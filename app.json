@@ -2,7 +2,7 @@
   "expo": {
     "name": "반반",
     "slug": "HalfAndHalf",
-    "scheme": "halfandhalf",
+    "scheme": ["halfandhalf", "banban"],
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
