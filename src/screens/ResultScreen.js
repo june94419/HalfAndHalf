@@ -420,7 +420,7 @@ export default function ResultScreen({ route, navigation }) {
         // 초기화 여부 확인 후 1회만 init
         const Kakao = window.Kakao;
         if (!Kakao.isInitialized()) {
-          Kakao.init('b9f9b7e040f0bea355301a5149a7512b');
+          Kakao.init('5794780a6ba882582fb21d5794ae3007');
         }
 
         // sendDefault는 Promise를 반환하지 않으므로 내부 try-catch로 격리
