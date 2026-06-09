@@ -3,23 +3,22 @@ import {
   View, Text, ActivityIndicator, TouchableOpacity, StyleSheet,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { signInAnonymously } from 'firebase/auth';
 import { ref, get } from 'firebase/database';
-import { db } from '../../firebase';
-import { useAuth } from '../context/AuthContext';
+import { auth, db } from '../../firebase';
 import { BALANCE_QUESTIONS } from '../data/balanceQuestions';
 
-// App.js 의 PostLoginHandler 와 공유하는 스토리지 키
+// App.js 의 PostLoginHandler 와 공유하는 스토리지 키 (카카오 OAuth 복귀용, 유지)
 export const PENDING_CODE_KEY = 'banban_pending_couple_code';
 
 export default function InviteScreen({ route, navigation }) {
   const { code } = route.params ?? {};
-  const { user, signInWithKakao } = useAuth();
 
   const [status, setCoupleStatus] = useState('loading'); // 'loading' | 'ready' | 'invalid'
-  const [coupleData, setCoupleData]   = useState(null);
-  const [isLoggingIn, setIsLoggingIn] = useState(false);
+  const [coupleData, setCoupleData] = useState(null);
+  const [isStarting, setIsStarting] = useState(false);
 
-  // ── 1. couples/${code} fetch ─────────────────────────────────────
+  // ── couples/${code} fetch ─────────────────────────────────────────
   useEffect(() => {
     if (!code) { setCoupleStatus('invalid'); return; }
     (async () => {
@@ -35,37 +34,31 @@ export default function InviteScreen({ route, navigation }) {
     })();
   }, [code]);
 
-  // ── 3. 로그인 완료 감지 → GameScreen 진입 ───────────────────────
-  // 이미 로그인된 채로 초대 링크를 열었거나,
-  // PostLoginHandler 가 복귀 후 이 화면으로 다시 라우팅한 경우 모두 처리
-  useEffect(() => {
-    if (!user || !coupleData || status !== 'ready') return;
-
-    const answersMap    = coupleData.creatorAnswers ?? {};
-    const questionIds   = Object.keys(answersMap).map(Number);
-    const questions     = questionIds
-      .map(id => BALANCE_QUESTIONS.find(q => q.id === id))
-      .filter(Boolean);
-    // creatorAnswers 의 첫 번째 질문 type 으로 카테고리 추론
-    const category = questions[0]?.type ?? '돈';
-
-    navigation.replace('Game', {
-      coupleCode: code,
-      mode:       'partner',
-      questions,
-      category,
-    });
-  }, [user, coupleData, status]);
-
-  // ── 5. 카카오 로그인 버튼 핸들러 ────────────────────────────────
-  const handleKakaoLogin = () => {
-    if (!code) return;
-    setIsLoggingIn(true);
+  // ── 시작 버튼: 익명 로그인 → 즉시 GameScreen 진입 ────────────────
+  const handleStart = async () => {
+    if (!code || !coupleData || isStarting) return;
+    setIsStarting(true);
     try {
-      // 카카오 리다이렉트 후 복귀 시 PostLoginHandler 가 이 코드를 읽어 복원
-      localStorage.setItem(PENDING_CODE_KEY, code);
-    } catch {}
-    signInWithKakao(); // 전체 페이지 리다이렉트
+      // 페이지 리다이렉트 없이 즉시 완료되는 익명 로그인
+      await signInAnonymously(auth);
+
+      const answersMap  = coupleData.creatorAnswers ?? {};
+      const questionIds = Object.keys(answersMap).map(Number);
+      const questions   = questionIds
+        .map(id => BALANCE_QUESTIONS.find(q => q.id === id))
+        .filter(Boolean);
+      const category = questions[0]?.type ?? '돈';
+
+      navigation.replace('Game', {
+        coupleCode: code,
+        mode:       'partner',
+        questions,
+        category,
+      });
+    } catch (e) {
+      console.error('[InviteScreen] 시작 실패:', e);
+      setIsStarting(false);
+    }
   };
 
   // ── 로딩 중 ──────────────────────────────────────────────────────
@@ -104,19 +97,19 @@ export default function InviteScreen({ route, navigation }) {
         <Text style={styles.title}>결혼 가치관 초청장이{'\n'}도착했습니다!</Text>
         <Text style={styles.sub}>
           연인이 결혼 가치관 테스트 20문항을 완료했어요.{'\n'}
-          로그인하고 속마음을 매칭해보세요.
+          지금 바로 속마음을 맞춰보세요!
         </Text>
       </View>
 
       <TouchableOpacity
-        style={[styles.kakaoBtn, isLoggingIn && styles.kakaoBtnDisabled]}
-        onPress={handleKakaoLogin}
-        disabled={isLoggingIn}
+        style={[styles.startBtn, isStarting && styles.startBtnDisabled]}
+        onPress={handleStart}
+        disabled={isStarting}
         activeOpacity={0.85}
       >
-        {isLoggingIn
+        {isStarting
           ? <ActivityIndicator color="#191600" />
-          : <Text style={styles.kakaoBtnText}>💬 카카오 로그인하고 시작하기</Text>}
+          : <Text style={styles.startBtnText}>속마음 맞추러 가기 💍</Text>}
       </TouchableOpacity>
 
       <TouchableOpacity style={styles.ghostBtn} onPress={() => navigation.replace('Lobby')}>
@@ -140,24 +133,15 @@ const styles = StyleSheet.create({
     borderWidth: 1.5, borderColor: '#FFD60A',
     marginBottom: 8,
   },
-  badge: { color: '#FFD60A', fontSize: 12, fontWeight: '800', letterSpacing: 1, marginBottom: 16 },
-  emoji: { fontSize: 52, marginBottom: 12 },
-  title: {
-    fontSize: 22, fontWeight: '900', color: '#FFFFFF',
-    textAlign: 'center', lineHeight: 32, marginBottom: 12,
-  },
-  sub: { fontSize: 14, color: '#888', textAlign: 'center', lineHeight: 22 },
+  badge:  { color: '#FFD60A', fontSize: 12, fontWeight: '800', letterSpacing: 1, marginBottom: 16 },
+  emoji:  { fontSize: 52, marginBottom: 12 },
+  title:  { fontSize: 22, fontWeight: '900', color: '#FFFFFF', textAlign: 'center', lineHeight: 32, marginBottom: 12 },
+  sub:    { fontSize: 14, color: '#888', textAlign: 'center', lineHeight: 22 },
 
-  kakaoBtn: {
-    width: '100%', backgroundColor: '#FEE500',
-    paddingVertical: 18, borderRadius: 16, alignItems: 'center',
-  },
-  kakaoBtnDisabled: { opacity: 0.5 },
-  kakaoBtnText: { color: '#191600', fontSize: 16, fontWeight: '900' },
+  startBtn:         { width: '100%', backgroundColor: '#FEE500', paddingVertical: 18, borderRadius: 16, alignItems: 'center' },
+  startBtnDisabled: { opacity: 0.5 },
+  startBtnText:     { color: '#191600', fontSize: 16, fontWeight: '900' },
 
-  ghostBtn: {
-    width: '100%', borderWidth: 1.5, borderColor: '#2A2A2A',
-    paddingVertical: 14, borderRadius: 14, alignItems: 'center',
-  },
+  ghostBtn:     { width: '100%', borderWidth: 1.5, borderColor: '#2A2A2A', paddingVertical: 14, borderRadius: 14, alignItems: 'center' },
   ghostBtnText: { color: '#555', fontSize: 14, fontWeight: '600' },
 });
