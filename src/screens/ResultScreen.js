@@ -391,6 +391,7 @@ export default function ResultScreen({ route, navigation }) {
     if (kakaoSharing) return;
     setKakaoSharing(true);
     try {
+      // ── 1. 커플 코드 생성 & DB 저장 ──────────────────────────
       const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
       let coupleCode = 'ROOM_';
       for (let i = 0; i < 6; i++) coupleCode += chars[Math.floor(Math.random() * 26)];
@@ -400,36 +401,52 @@ export default function ResultScreen({ route, navigation }) {
         creatorId: user.uid, creatorAnswers,
         status: 'progress', createdAt: new Date().toISOString(), fakePaid: false,
       });
+
+      // ── 2. 카카오 SDK 동적 로드 & 공유 (웹 전용) ─────────────
       if (Platform.OS === 'web' && typeof window !== 'undefined') {
+
+        // window.Kakao가 없으면 <script>를 동적으로 주입하고 onload 대기
+        if (!window.Kakao) {
+          await new Promise((resolve, reject) => {
+            const script = document.createElement('script');
+            script.src = 'https://t1.kakaocdn.net/kakao_js_sdk/2.7.2/kakao.min.js';
+            script.crossOrigin = 'anonymous';
+            script.onload  = resolve;
+            script.onerror = () => reject(new Error('Kakao SDK 스크립트 로드에 실패했습니다.'));
+            document.head.appendChild(script);
+          });
+        }
+
+        // 초기화 여부 확인 후 1회만 init
         const Kakao = window.Kakao;
-        if (Kakao) {
-          if (!Kakao.isInitialized()) Kakao.init('b9f9b7e040f0bea355301a5149a7512b');
-          const inviteUrl = `${window.location.origin}/invite?code=${coupleCode}`;
-          // sendDefault는 Promise를 반환하지 않으므로 외부 catch와 격리
-          try {
-            Kakao.Share.sendDefault({
-              objectType: 'feed',
-              content: {
-                title: '💍 결혼 가치관 초청장이 도착했습니다.',
-                description: '연인분이 결혼 가치관 테스트 20문항을 완료했습니다! 지금 앱을 깔고 속마음을 매칭해보세요.',
-                imageUrl: 'https://half-and-half-nine.vercel.app/og-image.png',
-                link: { mobileWebUrl: inviteUrl, webUrl: inviteUrl },
-              },
-              buttons: [{ title: '가치관 매칭하러 가기', link: { mobileWebUrl: inviteUrl, webUrl: inviteUrl } }],
-            });
-          } catch (sdkErr) {
-            // 공유 팝업이 열리면 SDK 내부 예외는 무시 (Kakao SDK v2 규격)
-            console.warn('[Kakao] sendDefault internal:', sdkErr);
-          }
+        if (!Kakao.isInitialized()) {
+          Kakao.init('b9f9b7e040f0bea355301a5149a7512b');
+        }
+
+        // sendDefault는 Promise를 반환하지 않으므로 내부 try-catch로 격리
+        const inviteUrl = `${window.location.origin}/invite?code=${coupleCode}`;
+        try {
+          Kakao.Share.sendDefault({
+            objectType: 'feed',
+            content: {
+              title: '💍 결혼 가치관 초청장이 도착했습니다.',
+              description: '연인분이 결혼 가치관 테스트 20문항을 완료했습니다! 지금 앱을 깔고 속마음을 매칭해보세요.',
+              imageUrl: 'https://half-and-half-nine.vercel.app/og-image.png',
+              link: { mobileWebUrl: inviteUrl, webUrl: inviteUrl },
+            },
+            buttons: [{ title: '가치관 매칭하러 가기', link: { mobileWebUrl: inviteUrl, webUrl: inviteUrl } }],
+          });
+        } catch (sdkErr) {
+          console.warn('[Kakao] sendDefault internal:', sdkErr);
         }
       }
-      // DB 저장 + 공유창 호출까지 완료 → 성공으로 간주
+
       setKakaoShared(true);
       setTimeout(() => setKakaoShared(false), 3000);
     } catch (e) {
-      // DB 저장 또는 익명 로그인 실패 시에만 에러 표시
-      console.error('Kakao share failed:', e);
-      Platform.OS === 'web' ? window.alert('공유에 실패했어요.') : Alert.alert('오류', '공유에 실패했어요.');
+      // 디버깅용: 정확한 에러 원인 노출
+      console.error('[handleKakaoShare]', e);
+      window.alert(e.message ?? '알 수 없는 오류가 발생했습니다.');
     } finally {
       setKakaoSharing(false);
     }
