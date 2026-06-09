@@ -404,7 +404,7 @@ export default function ResultScreen({ route, navigation }) {
         const Kakao = window.Kakao;
         if (Kakao) {
           if (!Kakao.isInitialized()) Kakao.init('b9f9b7e040f0bea355301a5149a7512b');
-          const inviteUrl = `https://banban.io.kr/invite?code=${coupleCode}`;
+          const inviteUrl = `${window.location.origin}/invite?code=${coupleCode}`;
           Kakao.Share.sendDefault({
             objectType: 'feed',
             content: {
