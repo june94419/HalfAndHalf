@@ -423,21 +423,32 @@ export default function ResultScreen({ route, navigation }) {
           Kakao.init('5794780a6ba882582fb21d5794ae3007');
         }
 
-        // sendDefault는 Promise를 반환하지 않으므로 내부 try-catch로 격리
         const inviteUrl = `${window.location.origin}/invite?code=${coupleCode}`;
         try {
           Kakao.Share.sendDefault({
             objectType: 'feed',
             content: {
               title: '💍 결혼 가치관 초청장이 도착했습니다.',
-              description: '연인분이 결혼 가치관 테스트 20문항을 완료했습니다! 지금 앱을 깔고 속마음을 매칭해보세요.',
-              imageUrl: 'https://half-and-half-nine.vercel.app/og-image.png',
-              link: { mobileWebUrl: inviteUrl, webUrl: inviteUrl },
+              description: '연인분이 결혼 가치관 테스트 20문항을 완료했습니다! 지금 속마음을 매칭해보세요.',
+              imageUrl: 'https://developers.kakao.com/assets/img/about/logos/kakaotalksharing/kakaotalk_sharing_btn_medium.png',
+              link: {
+                mobileWebUrl: inviteUrl,
+                webUrl: inviteUrl,
+              },
             },
-            buttons: [{ title: '가치관 매칭하러 가기', link: { mobileWebUrl: inviteUrl, webUrl: inviteUrl } }],
+            buttons: [
+              {
+                title: '테스트 참여하기',
+                link: {
+                  mobileWebUrl: inviteUrl,
+                  webUrl: inviteUrl,
+                },
+              },
+            ],
           });
-        } catch (sdkErr) {
-          console.warn('[Kakao] sendDefault internal:', sdkErr);
+        } catch (error) {
+          console.error('Kakao Share Error:', error);
+          alert('공유 실패 원인: ' + (error.message || error.toString()));
         }
       }
 
