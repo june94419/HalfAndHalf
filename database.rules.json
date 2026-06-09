@@ -1,123 +1,17 @@
 {
   "rules": {
-
-    // ────────────────────────────────────────────────────────────
-    // rooms
-    //   - 게임방 (6자리 코드, auth 불필요): host 필드로 구분
-    //   - 커플 비교방 (push ID, anonymous auth): userA 필드로 구분
-    // ────────────────────────────────────────────────────────────
-    "rooms": {
-      ".read": false,
-      ".write": false,
-
-      "$roomId": {
-        // 개별 방은 ID를 아는 사람만 읽을 수 있음
-        ".read": true,
-
-        // 신규 방 생성만 허용 (기존 방 덮어쓰기 불가)
-        // 게임방: auth 불필요, host 필드 존재
-        // 커플방: anonymous auth 필요, userA === auth.uid
-        ".write": "!data.exists() && (newData.child('host').isString() || (auth != null && newData.child('userA').val() === auth.uid))",
-
-        // ── 게임방: 플레이어 참가 ─────────────────────────────
-        "players": {
-          "$nickname": {
-            // lobby 상태일 때, 비어 있는 슬롯에만, 닉네임 키 = 닉네임 값
-            ".write": "data.parent().parent().child('status').val() === 'lobby' && !data.exists()",
-            ".validate": "newData.hasChildren(['nickname', 'joinedAt']) && newData.child('nickname').isString() && newData.child('nickname').val().length >= 1 && newData.child('nickname').val().length <= 8 && newData.child('nickname').val() === $nickname && newData.child('joinedAt').isNumber()"
-          }
-        },
-
-        // ── 게임방: 질문별 투표 답변 ──────────────────────────
-        "answers": {
-          "$questionIndex": {
-            "$nickname": {
-              // 방에 등록된 플레이어만 자신의 닉네임 키로 답 작성
-              ".write": "root.child('rooms').child($roomId).child('players').child($nickname).exists()",
-              ".validate": "newData.isString() && (newData.val() === 'A' || newData.val() === 'B')"
-            }
-          }
-        },
-
-        // ── 게임방: 재투표 답변 ───────────────────────────────
-        "revoteAnswers": {
-          "$questionIndex": {
-            "$nickname": {
-              // revote 상태이고, 방에 등록된 플레이어만 (변경 허용)
-              ".write": "root.child('rooms').child($roomId).child('players').child($nickname).exists() && root.child('rooms').child($roomId).child('status').val() === 'revote'",
-              ".validate": "newData.isString() && (newData.val() === 'A' || newData.val() === 'B')"
-            }
-          }
-        },
-
-        // ── 게임방: 상태 변경 (host 식별 불가로 값 검증만) ────
-        "status": {
-          // host 필드가 있는 방(게임방)에서만 업데이트 가능
-          ".write": "data.parent().child('host').exists()",
-          ".validate": "newData.isString() && (newData.val() === 'lobby' || newData.val() === 'game' || newData.val() === 'debate' || newData.val() === 'revote' || newData.val() === 'revote_results' || newData.val() === 'results')"
-        },
-
-        "currentQuestion": {
-          ".write": "data.parent().child('host').exists()",
-          ".validate": "newData.isNumber() && newData.val() >= 0"
-        },
-
-        "debateQuestion": {
-          ".write": "data.parent().child('host').exists()",
-          ".validate": "newData.val() === null || newData.isNumber()"
-        },
-
-        // ── 커플 비교방: UserB 답변 저장 ─────────────────────
-        "answersB": {
-          // 로그인 상태, userB 미등록, 최초 1회만
-          ".write": "auth != null && !data.parent().child('userB').exists() && !data.exists()",
-          "$questionId": {
-            ".validate": "newData.isString() && (newData.val() === 'A' || newData.val() === 'B')"
-          }
-        },
-
-        "userB": {
-          // 로그인 상태, 자신의 uid로, 최초 1회만
-          ".write": "auth != null && !data.exists() && newData.val() === auth.uid"
-        },
-
-        // ── 커플 비교방: 합의안 저장 ──────────────────────────
-        "compromises": {
-          "$questionId": {
-            // userA 또는 userB만 작성·수정 가능, 500자 이하
-            ".write": "auth != null && (root.child('rooms').child($roomId).child('userA').val() === auth.uid || root.child('rooms').child($roomId).child('userB').val() === auth.uid)",
-            ".validate": "newData.isString() && newData.val().length <= 500"
-          }
-        }
-      }
-    },
-
-    // ────────────────────────────────────────────────────────────
-    // couples — 카톡 초청장 커플 코드 (익명 인증 유저, 최초 1회 생성만 허용)
-    // ────────────────────────────────────────────────────────────
+    ".read": true,
+    ".write": "auth != null",
     "couples": {
       "$coupleCode": {
         ".read": true,
-        // 로그인된 유저가 아직 없는 코드에만 최초 1회 쓰기 가능 (덮어쓰기 불가)
-        ".write": "auth != null && !data.exists()",
-        ".validate": "newData.hasChildren(['creatorId', 'creatorAnswers', 'status', 'createdAt', 'fakePaid']) && newData.child('creatorId').val() === auth.uid && newData.child('status').val() === 'progress' && newData.child('fakePaid').isBoolean()"
+        ".write": "auth != null"
       }
     },
-
-    // ────────────────────────────────────────────────────────────
-    // global_stats — 솔로 모드 전 세계 집계 카운터
-    // ────────────────────────────────────────────────────────────
-    "global_stats": {
-      ".read": true,
-      "$questionId": {
-        "A": {
-          ".write": true,
-          ".validate": "newData.isNumber()"
-        },
-        "B": {
-          ".write": true,
-          ".validate": "newData.isNumber()"
-        }
+    "rooms": {
+      "$roomCode": {
+        ".read": true,
+        ".write": "auth != null"
       }
     }
   }
