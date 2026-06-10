@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
+import { Platform } from 'react-native';
 
 const AuthContext = createContext(null);
 
@@ -87,6 +88,12 @@ export function AuthProvider({ children }) {
   useEffect(() => {
     (async () => {
       try {
+        // 네이티브(Android/iOS)는 window.location, localStorage 없음 → 즉시 리턴
+        if (Platform.OS !== 'web') {
+          setLoading(false);
+          return;
+        }
+
         const params   = new URLSearchParams(window.location.search);
         const code     = params.get('code');
         const error    = params.get('error');
