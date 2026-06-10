@@ -124,7 +124,7 @@ function CoupleResultScreen({ coupleCode, navigation }) {
   const color      = rateColor(rate);
   const titleData  = coupleTitle(rate);
   const catBars    = catMatchRate(catCount);
-  const spicy      = unmatched.slice(0, 2);
+  const spicy      = unmatched.slice(0, 3);
 
   // ── 기존 결제 배너 핸들러 ────────────────────────────────────
   const handlePayment = () => {
@@ -221,10 +221,11 @@ function CoupleResultScreen({ coupleCode, navigation }) {
           ))}
         </View>
 
-        {/* ── 4. 불일치 맛보기 (최대 2개) ────────────────────── */}
+        {/* ── 4. 서로 다른 의견 (실제 데이터, 최대 3개) ────────── */}
         {spicy.length > 0 && (
           <View style={cs.section}>
-            <Text style={cs.sectionTitle}>🌶️ 의견이 갈린 핵심 질문</Text>
+            <Text style={cs.sectionTitle}>🌶️ 서로 다른 의견</Text>
+            <Text style={cs.sectionDesc}>두 분이 실제로 다른 답을 고른 질문들이에요</Text>
             {spicy.map(({ q, creatorChoice, partnerChoice }) => (
               <View key={q.id} style={cs.spicyCard}>
                 <Text style={cs.spicyTag}>{q.tag}</Text>
@@ -239,6 +240,17 @@ function CoupleResultScreen({ coupleCode, navigation }) {
                 </View>
               </View>
             ))}
+
+            {/* 브리지: 솔루션 CTA */}
+            <View style={cs.bridgeBox}>
+              <Text style={cs.bridgeText}>
+                서로 다른 가치관 <Text style={cs.bridgeHighlight}>{spicy.length}개 영역</Text>에 대해{'\n'}
+                갈등을 예방할 솔루션을 원하시나요?
+              </Text>
+              <TouchableOpacity style={cs.bridgeBtn} onPress={() => setLeadModal(true)} activeOpacity={0.88}>
+                <Text style={cs.bridgeBtnText}>🎁 AI 리포트 무료로 받기 (선착순)</Text>
+              </TouchableOpacity>
+            </View>
           </View>
         )}
 
@@ -246,11 +258,11 @@ function CoupleResultScreen({ coupleCode, navigation }) {
         <View style={cs.lockBanner}>
           <View style={cs.lockHeader}>
             <Text style={cs.lockIcon}>🔒</Text>
-            <View style={cs.dangerBadge}><Text style={cs.dangerBadgeTxt}>위험 스팟 3개 발견</Text></View>
+            <View style={cs.dangerBadge}><Text style={cs.dangerBadgeTxt}>위험 스팟 {unmatched.length}개 발견</Text></View>
           </View>
           <Text style={cs.lockTitle}>
             두 분의 데이터 정밀 진단 결과,{'\n'}
-            <Text style={{ color: '#FCA5A5' }}>결혼 후 파혼 위험 스팟 3개</Text>가 발견됐습니다.
+            <Text style={{ color: '#FCA5A5' }}>결혼 후 파혼 위험 스팟 {unmatched.length}개</Text>가 발견됐습니다.
           </Text>
           <Text style={cs.lockBody}>
             AI 부부상담 전문가의{' '}
@@ -269,15 +281,6 @@ function CoupleResultScreen({ coupleCode, navigation }) {
 
         {/* ── 6. 더미 리포트 ───────────────────────────────────── */}
         {reportOpen && <DummyReport catCount={catCount} unmatched={unmatched} rate={rate} />}
-
-        {/* ── 7. AI 리포트 이메일 수집 CTA ────────────────────── */}
-        <View style={cs.leadCta}>
-          <Text style={cs.leadCtaTitle}>🎁 AI 가치관 심층 리포트 무료로 받기</Text>
-          <Text style={cs.leadCtaSub}>선착순 · 이메일로 즉시 발송해 드려요</Text>
-          <TouchableOpacity style={cs.leadCtaBtn} onPress={() => setLeadModal(true)} activeOpacity={0.88}>
-            <Text style={cs.leadCtaBtnText}>무료로 받기 (선착순)</Text>
-          </TouchableOpacity>
-        </View>
 
         <TouchableOpacity style={cs.ghostBtn} onPress={() => navigation.replace('Lobby')}>
           <Text style={cs.ghostBtnText}>홈으로 돌아가기</Text>
@@ -777,6 +780,16 @@ const cs = StyleSheet.create({
 
   ghostBtn:    { borderWidth: 1.5, borderColor: '#E5E7EB', paddingVertical: 14, borderRadius: 14, alignItems: 'center' },
   ghostBtnText: { color: '#9CA3AF', fontSize: 14, fontWeight: '600' },
+
+  // 섹션 설명
+  sectionDesc: { fontSize: 12, color: '#9CA3AF', marginBottom: 8 },
+
+  // 불일치 브리지 CTA
+  bridgeBox:       { backgroundColor: '#F5F3FF', borderRadius: 16, padding: 18, alignItems: 'center', gap: 12, borderWidth: 1.5, borderColor: '#DDD6FE', marginTop: 4 },
+  bridgeText:      { fontSize: 14, color: '#374151', textAlign: 'center', lineHeight: 22 },
+  bridgeHighlight: { fontWeight: '900', color: '#7C3AED' },
+  bridgeBtn:       { backgroundColor: '#7C3AED', borderRadius: 14, paddingVertical: 14, paddingHorizontal: 24 },
+  bridgeBtnText:   { color: '#FFF', fontSize: 14, fontWeight: '800' },
 
   // 커플 성향 타이틀 카드
   titleCard:   { borderWidth: 2, borderRadius: 20, padding: 22, alignItems: 'center', gap: 8 },
