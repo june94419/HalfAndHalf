@@ -1,21 +1,65 @@
 {
   "cli": {
-    "version": ">= 20.0.0",
-    "appVersionSource": "remote"
+    "version": ">= 12.0.0",
+    "appVersionSource": "remote",
+    "promptToConfigurePushNotifications": false
   },
   "build": {
+    "base": {
+      "node": "20.18.0",
+      "env": {
+        "EXPO_PUBLIC_KAKAO_REST_API_KEY": "4d71718253f569c89167ede6a5b17bc3"
+      }
+    },
     "development": {
+      "extends": "base",
       "developmentClient": true,
-      "distribution": "internal"
+      "distribution": "internal",
+      "channel": "development",
+      "ios": {
+        "simulator": false,
+        "buildConfiguration": "Debug"
+      },
+      "android": {
+        "buildType": "apk",
+        "gradleCommand": ":app:assembleDebug"
+      }
     },
     "preview": {
-      "distribution": "internal"
+      "extends": "base",
+      "distribution": "internal",
+      "channel": "preview",
+      "ios": {
+        "buildConfiguration": "Release"
+      },
+      "android": {
+        "buildType": "apk"
+      }
     },
     "production": {
-      "autoIncrement": true
+      "extends": "base",
+      "autoIncrement": true,
+      "channel": "production",
+      "ios": {
+        "buildConfiguration": "Release",
+        "distribution": "store"
+      },
+      "android": {
+        "buildType": "app-bundle"
+      }
     }
   },
   "submit": {
-    "production": {}
+    "production": {
+      "ios": {
+        "appleId": "",
+        "ascAppId": "",
+        "appleTeamId": ""
+      },
+      "android": {
+        "serviceAccountKeyPath": "",
+        "track": "internal"
+      }
+    }
   }
 }
