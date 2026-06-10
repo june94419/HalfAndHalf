@@ -15,16 +15,47 @@ import { trackEvent } from '../utils/analytics';
 const CATEGORY_LABEL = { '돈': '돈 & 재테크', '시댁': '시댁 & 처가', '라이프': '라이프스타일' };
 const getChoiceText = (q, c) => c === 'A' ? q.questionA : q.questionB;
 
-// ── 일치율에 따른 색상 / 코멘트 ────────────────────────────────────
+// ── 일치율에 따른 색상 ──────────────────────────────────────────────
 const rateColor = (r) => r >= 80 ? '#16A34A' : r >= 60 ? '#D97706' : r >= 40 ? '#DC2626' : '#7C3AED';
-const rateLabel = (r) => {
-  if (r >= 80) return '💚 완벽에 가깝게 잘 맞아요!';
-  if (r >= 60) return '💛 조율하면 더 잘 맞을 수 있어요';
-  if (r >= 40) return '🧡 갈등 가능성이 높아요, 대화가 필요해요';
-  return '❤️ 전문적인 상담이 필요할 수 있어요';
+
+// ── 커플 성향 타이틀 ────────────────────────────────────────────────
+const coupleTitle = (r) => {
+  if (r >= 85) return {
+    emoji: '👑', title: '환상의 티키타카 부부',
+    desc: '소울메이트급 궁합! 두 분은 이미 결혼각이 나와있어요.',
+    bg: '#F0FDF4', border: '#86EFAC', textColor: '#15803D',
+  };
+  if (r >= 70) return {
+    emoji: '🍭', title: '찰떡궁합 단짠 커플',
+    desc: '대부분의 가치관이 착착 맞아요. 조금만 조율하면 완벽해요!',
+    bg: '#FFFBEB', border: '#FDE68A', textColor: '#B45309',
+  };
+  if (r >= 50) return {
+    emoji: '💫', title: '밀당 마스터 로맨스 커플',
+    desc: '반반이라서 오히려 설레는 커플. 차이가 매력이 될 수 있어요!',
+    bg: '#EFF6FF', border: '#BFDBFE', textColor: '#1D4ED8',
+  };
+  return {
+    emoji: '🛸', title: '매일이 스릴러인 화성금성 커플',
+    desc: '가치관 차이가 꽤 큰 편이에요. 솔직한 대화가 정말 중요해요.',
+    bg: '#FDF4FF', border: '#E9D5FF', textColor: '#7E22CE',
+  };
 };
 
-// ── 카테고리별 위험도 계산 ───────────────────────────────────────────
+// ── 카테고리별 일치율 계산 ───────────────────────────────────────────
+const catMatchRate = (catCount) => [
+  { key: '돈',   emoji: '💰', label: '돈 & 재테크' },
+  { key: '시댁', emoji: '🏠', label: '시댁 & 처가' },
+  { key: '라이프', emoji: '🌿', label: '라이프스타일' },
+].map(({ key, emoji, label }) => {
+  const [total, unmatched] = catCount[key] ?? [0, 0];
+  const matched = total - unmatched;
+  const pct = total > 0 ? Math.round((matched / total) * 100) : 0;
+  const color = pct >= 70 ? '#16A34A' : pct >= 40 ? '#D97706' : '#DC2626';
+  return { key, emoji, label, pct, color, matched, total };
+});
+
+// ── 카테고리별 위험도 (DummyReport용) ────────────────────────────────
 const riskLevel = (unmatched, total) => {
   if (total === 0) return { label: '낮음', color: '#16A34A', pct: 15 };
   const r = unmatched / total;
@@ -37,11 +68,15 @@ const riskLevel = (unmatched, total) => {
 // CoupleResultScreen — 커플 코드 기반 수익성 검증 화면
 // ────────────────────────────────────────────────────────────────────
 function CoupleResultScreen({ coupleCode, navigation }) {
-  const [status, setStatus]       = useState('loading');
-  const [matchCount, setMatch]    = useState(0);
-  const [unmatched, setUnmatched] = useState([]);
-  const [catCount, setCatCount]   = useState({ '돈': [0, 0], '시댁': [0, 0], '라이프': [0, 0] });
-  const [reportOpen, setReport]   = useState(false);
+  const [status, setStatus]             = useState('loading');
+  const [matchCount, setMatch]          = useState(0);
+  const [unmatched, setUnmatched]       = useState([]);
+  const [catCount, setCatCount]         = useState({ '돈': [0, 0], '시댁': [0, 0], '라이프': [0, 0] });
+  const [reportOpen, setReport]         = useState(false);
+  const [leadModal, setLeadModal]       = useState(false);
+  const [email, setEmail]               = useState('');
+  const [emailSending, setEmailSending] = useState(false);
+  const [emailDone, setEmailDone]       = useState(false);
   const TOTAL = 20;
 
   useEffect(() => {
@@ -54,7 +89,7 @@ function CoupleResultScreen({ coupleCode, navigation }) {
 
         let matched = 0;
         const unmatchedList = [];
-        const cc = { '돈': [0, 0], '시댁': [0, 0], '라이프': [0, 0] }; // [total, unmatched]
+        const cc = { '돈': [0, 0], '시댁': [0, 0], '라이프': [0, 0] };
 
         Object.keys(creatorAnswers).forEach(idStr => {
           const q = BALANCE_QUESTIONS.find(q => q.id === Number(idStr));
@@ -65,11 +100,7 @@ function CoupleResultScreen({ coupleCode, navigation }) {
             matched++;
           } else {
             if (cc[type]) cc[type][1]++;
-            unmatchedList.push({
-              q,
-              creatorChoice: creatorAnswers[idStr],
-              partnerChoice: partnerAnswers[idStr] ?? '?',
-            });
+            unmatchedList.push({ q, creatorChoice: creatorAnswers[idStr], partnerChoice: partnerAnswers[idStr] ?? '?' });
           }
         });
 
@@ -77,7 +108,6 @@ function CoupleResultScreen({ coupleCode, navigation }) {
         setUnmatched(unmatchedList);
         setCatCount(cc);
         setStatus('ready');
-        // GA4: 파트너 결과 확인 이벤트
         trackEvent('partner_result_viewed', {
           couple_code: coupleCode,
           match_rate: Math.round((matched / 20) * 100),
@@ -90,32 +120,48 @@ function CoupleResultScreen({ coupleCode, navigation }) {
     })();
   }, [coupleCode]);
 
-  const rate     = Math.round((matchCount / TOTAL) * 100);
-  const spicy    = unmatched.slice(0, 2);
-  const color    = rateColor(rate);
+  const rate       = Math.round((matchCount / TOTAL) * 100);
+  const color      = rateColor(rate);
+  const titleData  = coupleTitle(rate);
+  const catBars    = catMatchRate(catCount);
+  const spicy      = unmatched.slice(0, 2);
 
-  // ── 결제 버튼 클릭 핸들러 ─────────────────────────────────────
+  // ── 기존 결제 배너 핸들러 ────────────────────────────────────
   const handlePayment = () => {
-    // 전환율 데이터 수집 (fire-and-forget)
     push(ref(db, 'analytics_events'), {
-      event:      'click_fake_payment',
-      coupleCode,
-      matchRate:  rate,
-      timestamp:  new Date().toISOString(),
-      platform:   Platform.OS,
+      event: 'click_fake_payment', coupleCode, matchRate: rate,
+      timestamp: new Date().toISOString(), platform: Platform.OS,
     }).catch(() => {});
-
     const title = '🎉 축하합니다!';
-    const msg   = '현재 \'반반\' 출시 기념 오픈 베타 이벤트 기간으로,\n본 프리미엄 리포트는 100% 무료로 즉시 발급됩니다!\n\n정식 출시 전까지 마음껏 이용해 보세요. 🙂';
-    if (Platform.OS === 'web') {
-      window.alert(`${title}\n\n${msg}`);
-      setReport(true);
-    } else {
-      Alert.alert(title, msg, [{ text: '리포트 열기 🎁', onPress: () => setReport(true) }]);
+    const msg = '현재 \'반반\' 오픈 베타 기간으로,\n본 리포트는 100% 무료로 즉시 발급됩니다!\n\n정식 출시 전까지 마음껏 이용해 보세요. 🙂';
+    Platform.OS === 'web' ? (window.alert(`${title}\n\n${msg}`), setReport(true))
+      : Alert.alert(title, msg, [{ text: '리포트 열기 🎁', onPress: () => setReport(true) }]);
+  };
+
+  // ── 이메일 리드 제출 핸들러 ──────────────────────────────────
+  const handleLeadSubmit = async () => {
+    const trimmed = email.trim();
+    if (!trimmed || !trimmed.includes('@')) {
+      Platform.OS === 'web' ? window.alert('올바른 이메일 주소를 입력해 주세요.') : Alert.alert('알림', '올바른 이메일 주소를 입력해 주세요.');
+      return;
+    }
+    setEmailSending(true);
+    try {
+      await push(ref(db, 'premium_leads'), {
+        email: trimmed,
+        coupleCode,
+        matchRate: rate,
+        createdAt: new Date().toISOString(),
+      });
+      setEmailDone(true);
+      trackEvent('premium_lead_submitted', { couple_code: coupleCode, match_rate: rate });
+    } catch (e) {
+      console.error('Lead submit failed:', e);
+    } finally {
+      setEmailSending(false);
     }
   };
 
-  // ── 로딩 / 에러 ──────────────────────────────────────────────
   if (status === 'loading') return (
     <ScreenShell>
       <View style={cs.center}>
@@ -139,32 +185,46 @@ function CoupleResultScreen({ coupleCode, navigation }) {
 
   return (
     <ScreenShell contentStyle={{ paddingHorizontal: 0, paddingTop: 0 }}>
-      <ScrollView
-        contentContainerStyle={cs.scroll}
-        showsVerticalScrollIndicator={false}
-        keyboardShouldPersistTaps="handled"
-      >
+      <ScrollView contentContainerStyle={cs.scroll} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
 
-        {/* ── 1. 일치율 카드 ──────────────────────────────────── */}
+        {/* ── 1. 커플 성향 타이틀 ────────────────────────────── */}
+        <View style={[cs.titleCard, { backgroundColor: titleData.bg, borderColor: titleData.border }]}>
+          <Text style={cs.titleEmoji}>{titleData.emoji}</Text>
+          <Text style={[cs.titleText, { color: titleData.textColor }]}>{titleData.title}</Text>
+          <Text style={cs.titleDesc}>{titleData.desc}</Text>
+        </View>
+
+        {/* ── 2. 일치율 게이지 ────────────────────────────────── */}
         <View style={cs.matchCard}>
-          <Text style={cs.matchLabel}>우리 커플의 가치관 일치율</Text>
+          <Text style={cs.matchLabel}>가치관 일치율</Text>
           <Text style={[cs.matchRate, { color }]}>{rate}%</Text>
-          <Text style={cs.matchSub}>{rateLabel(rate)}</Text>
-
-          {/* 게이지 바 */}
           <View style={cs.gaugeTrack}>
             <View style={[cs.gaugeFill, { width: `${rate}%`, backgroundColor: color }]} />
           </View>
           <Text style={cs.matchCount}>
             20문항 중 <Text style={{ color, fontWeight: '900' }}>{matchCount}문항 일치</Text>
-            {' '}/ {TOTAL - matchCount}문항 불일치
+            {' '}· {TOTAL - matchCount}문항 불일치
           </Text>
         </View>
 
-        {/* ── 2. 불일치 맛보기 (매운맛 질문 최대 2개) ───────────── */}
+        {/* ── 3. 카테고리별 일치 점수 ────────────────────────── */}
+        <View style={cs.catCard}>
+          <Text style={cs.sectionTitle}>📊 영역별 가치관 일치 점수</Text>
+          {catBars.map(({ key, emoji, label, pct, color: c, matched, total }) => (
+            <View key={key} style={cs.catRow}>
+              <Text style={cs.catLabel}>{emoji} {label}</Text>
+              <View style={cs.catBarTrack}>
+                <View style={[cs.catBarFill, { width: `${pct}%`, backgroundColor: c }]} />
+              </View>
+              <Text style={[cs.catPct, { color: c }]}>{pct}%</Text>
+            </View>
+          ))}
+        </View>
+
+        {/* ── 4. 불일치 맛보기 (최대 2개) ────────────────────── */}
         {spicy.length > 0 && (
           <View style={cs.section}>
-            <Text style={cs.sectionTitle}>🌶️ 두 분의 의견이 갈린 질문</Text>
+            <Text style={cs.sectionTitle}>🌶️ 의견이 갈린 핵심 질문</Text>
             {spicy.map(({ q, creatorChoice, partnerChoice }) => (
               <View key={q.id} style={cs.spicyCard}>
                 <Text style={cs.spicyTag}>{q.tag}</Text>
@@ -182,45 +242,96 @@ function CoupleResultScreen({ coupleCode, navigation }) {
           </View>
         )}
 
-        {/* ── 3. 잠금 배너 (Fake Door) ──────────────────────── */}
+        {/* ── 5. 잠금 배너 (Fake Door) ────────────────────────── */}
         <View style={cs.lockBanner}>
           <View style={cs.lockHeader}>
             <Text style={cs.lockIcon}>🔒</Text>
             <View style={cs.dangerBadge}><Text style={cs.dangerBadgeTxt}>위험 스팟 3개 발견</Text></View>
           </View>
           <Text style={cs.lockTitle}>
-            두 분의 20개 가치관 데이터 정밀 진단 결과,{'\n'}
-            결혼 후 파혼으로 이어질 수 있는{'\n'}
-            <Text style={{ color: '#FCA5A5' }}>심각한 위험 스팟이 3개 발견</Text>되었습니다.
+            두 분의 데이터 정밀 진단 결과,{'\n'}
+            <Text style={{ color: '#FCA5A5' }}>결혼 후 파혼 위험 스팟 3개</Text>가 발견됐습니다.
           </Text>
           <Text style={cs.lockBody}>
-            AI 부부상담 전문가가 집필한{' '}
-            <Text style={cs.lockHighlight}>[우리 커플 맞춤형 결혼 종합 처방전 & 갈등 방지 리포트]</Text>를 열어보세요.
+            AI 부부상담 전문가의{' '}
+            <Text style={cs.lockHighlight}>[우리 커플 맞춤형 갈등 방지 리포트]</Text>를 열어보세요.
           </Text>
-
           <View style={cs.includeBox}>
-            {[
-              '📊 카테고리별 갈등 위험도 그래프',
-              '👫 선배 부부들의 현실 조언',
-              '💬 밤에 안 싸우고 대화하는 맞춤형 소통 가이드라인',
-            ].map(item => (
+            {['📊 카테고리별 갈등 위험도 그래프', '👫 선배 부부들의 현실 조언', '💬 맞춤형 소통 가이드라인'].map(item => (
               <Text key={item} style={cs.includeItem}>✓  {item}</Text>
             ))}
           </View>
-
           <TouchableOpacity style={cs.payBtn} onPress={handlePayment} activeOpacity={0.88}>
             <Text style={cs.payBtnText}>3,900원에 리포트 즉시 열기</Text>
             <Text style={cs.payBtnSub}>지금 바로 커플 맞춤 처방전 확인</Text>
           </TouchableOpacity>
         </View>
 
-        {/* ── 4. 더미 리포트 (결제 후 공개) ────────────────────── */}
+        {/* ── 6. 더미 리포트 ───────────────────────────────────── */}
         {reportOpen && <DummyReport catCount={catCount} unmatched={unmatched} rate={rate} />}
+
+        {/* ── 7. AI 리포트 이메일 수집 CTA ────────────────────── */}
+        <View style={cs.leadCta}>
+          <Text style={cs.leadCtaTitle}>🎁 AI 가치관 심층 리포트 무료로 받기</Text>
+          <Text style={cs.leadCtaSub}>선착순 · 이메일로 즉시 발송해 드려요</Text>
+          <TouchableOpacity style={cs.leadCtaBtn} onPress={() => setLeadModal(true)} activeOpacity={0.88}>
+            <Text style={cs.leadCtaBtnText}>무료로 받기 (선착순)</Text>
+          </TouchableOpacity>
+        </View>
 
         <TouchableOpacity style={cs.ghostBtn} onPress={() => navigation.replace('Lobby')}>
           <Text style={cs.ghostBtnText}>홈으로 돌아가기</Text>
         </TouchableOpacity>
       </ScrollView>
+
+      {/* ── 이메일 리드 모달 ─────────────────────────────────── */}
+      {leadModal && (
+        <View style={cs.modalOverlay}>
+          <View style={cs.modalBox}>
+            {emailDone ? (
+              <>
+                <Text style={cs.modalEmoji}>🎉</Text>
+                <Text style={cs.modalDoneTitle}>신청 완료!</Text>
+                <Text style={cs.modalDoneDesc}>입력하신 이메일로 리포트를 보내드릴게요.{'\n'}조금만 기다려 주세요!</Text>
+                <TouchableOpacity style={cs.modalCloseBtn} onPress={() => { setLeadModal(false); setEmailDone(false); setEmail(''); }}>
+                  <Text style={cs.modalCloseBtnText}>닫기</Text>
+                </TouchableOpacity>
+              </>
+            ) : (
+              <>
+                <TouchableOpacity style={cs.modalDismiss} onPress={() => setLeadModal(false)}>
+                  <Text style={cs.modalDismissTxt}>✕</Text>
+                </TouchableOpacity>
+                <Text style={cs.modalTitle}>💌 AI 심층 리포트 무료 신청</Text>
+                <Text style={cs.modalDesc}>
+                  두 분의 가치관 불일치 영역을 심층 분석한{'\n'}맞춤형 AI 리포트를 이메일로 보내드려요.
+                </Text>
+                <TextInput
+                  style={cs.emailInput}
+                  placeholder="이메일 주소를 입력해 주세요"
+                  placeholderTextColor="#9CA3AF"
+                  value={email}
+                  onChangeText={setEmail}
+                  keyboardType="email-address"
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                />
+                <TouchableOpacity
+                  style={[cs.modalSubmitBtn, (!email.trim() || emailSending) && cs.modalSubmitBtnDisabled]}
+                  onPress={handleLeadSubmit}
+                  disabled={!email.trim() || emailSending}
+                  activeOpacity={0.88}
+                >
+                  <Text style={cs.modalSubmitBtnText}>
+                    {emailSending ? '신청 중...' : '무료로 받기 →'}
+                  </Text>
+                </TouchableOpacity>
+                <Text style={cs.modalNote}>스팸 없이 리포트만 발송해 드려요.</Text>
+              </>
+            )}
+          </View>
+        </View>
+      )}
     </ScreenShell>
   );
 }
@@ -666,6 +777,45 @@ const cs = StyleSheet.create({
 
   ghostBtn:    { borderWidth: 1.5, borderColor: '#E5E7EB', paddingVertical: 14, borderRadius: 14, alignItems: 'center' },
   ghostBtnText: { color: '#9CA3AF', fontSize: 14, fontWeight: '600' },
+
+  // 커플 성향 타이틀 카드
+  titleCard:   { borderWidth: 2, borderRadius: 20, padding: 22, alignItems: 'center', gap: 8 },
+  titleEmoji:  { fontSize: 44 },
+  titleText:   { fontSize: 20, fontWeight: '900', textAlign: 'center' },
+  titleDesc:   { fontSize: 13, color: '#6B7280', textAlign: 'center', lineHeight: 20 },
+
+  // 카테고리 진행바 카드
+  catCard:     { backgroundColor: '#FAFAFA', borderRadius: 20, padding: 20, gap: 14, borderWidth: 1, borderColor: '#E5E7EB' },
+  catRow:      { gap: 6 },
+  catLabel:    { fontSize: 13, fontWeight: '700', color: '#374151' },
+  catBarTrack: { height: 8, backgroundColor: '#E5E7EB', borderRadius: 4, overflow: 'hidden' },
+  catBarFill:  { height: '100%', borderRadius: 4 },
+  catPct:      { fontSize: 12, fontWeight: '800', textAlign: 'right' },
+
+  // 이메일 리드 CTA
+  leadCta:         { backgroundColor: '#F0FDF4', borderRadius: 20, padding: 22, alignItems: 'center', gap: 10, borderWidth: 1.5, borderColor: '#86EFAC' },
+  leadCtaTitle:    { fontSize: 16, fontWeight: '900', color: '#15803D', textAlign: 'center' },
+  leadCtaSub:      { fontSize: 12, color: '#4ADE80', fontWeight: '600' },
+  leadCtaBtn:      { backgroundColor: '#16A34A', borderRadius: 14, paddingVertical: 14, paddingHorizontal: 32 },
+  leadCtaBtnText:  { color: '#FFF', fontSize: 15, fontWeight: '800' },
+
+  // 이메일 모달
+  modalOverlay:     { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end', zIndex: 100 },
+  modalBox:         { backgroundColor: '#FFFFFF', borderTopLeftRadius: 28, borderTopRightRadius: 28, padding: 28, gap: 14, alignItems: 'center' },
+  modalDismiss:     { alignSelf: 'flex-end', padding: 4 },
+  modalDismissTxt:  { fontSize: 16, color: '#9CA3AF' },
+  modalTitle:       { fontSize: 18, fontWeight: '900', color: '#1A1A1A', textAlign: 'center' },
+  modalDesc:        { fontSize: 13, color: '#6B7280', textAlign: 'center', lineHeight: 20 },
+  emailInput:       { width: '100%', borderWidth: 1.5, borderColor: '#D1D5DB', borderRadius: 14, paddingHorizontal: 16, paddingVertical: 14, fontSize: 15, color: '#1A1A1A', backgroundColor: '#F9FAFB' },
+  modalSubmitBtn:        { width: '100%', backgroundColor: '#1A1A1A', borderRadius: 14, paddingVertical: 16, alignItems: 'center' },
+  modalSubmitBtnDisabled: { opacity: 0.4 },
+  modalSubmitBtnText:     { color: '#FFF', fontSize: 16, fontWeight: '800' },
+  modalNote:        { fontSize: 11, color: '#9CA3AF' },
+  modalEmoji:       { fontSize: 48 },
+  modalDoneTitle:   { fontSize: 20, fontWeight: '900', color: '#1A1A1A' },
+  modalDoneDesc:    { fontSize: 14, color: '#6B7280', textAlign: 'center', lineHeight: 22 },
+  modalCloseBtn:    { width: '100%', borderWidth: 1.5, borderColor: '#E5E7EB', borderRadius: 14, paddingVertical: 14, alignItems: 'center' },
+  modalCloseBtnText: { color: '#9CA3AF', fontSize: 14, fontWeight: '600' },
 });
 
 // ── DummyReport 스타일 ───────────────────────────────────────────────
