@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import {
-  View, Text, TouchableOpacity, TextInput,
+  View, Text, TouchableOpacity, TextInput,  // TextInput: rooms/ 플로우 타협안 입력에서 사용
   ScrollView, StyleSheet, ActivityIndicator,
   Alert, Platform,
 } from 'react-native';
@@ -72,11 +72,8 @@ function CoupleResultScreen({ coupleCode, navigation }) {
   const [matchCount, setMatch]          = useState(0);
   const [unmatched, setUnmatched]       = useState([]);
   const [catCount, setCatCount]         = useState({ '돈': [0, 0], '시댁': [0, 0], '라이프': [0, 0] });
-  const [reportOpen, setReport]         = useState(false);
-  const [leadModal, setLeadModal]       = useState(false);
-  const [email, setEmail]               = useState('');
-  const [emailSending, setEmailSending] = useState(false);
-  const [emailDone, setEmailDone]       = useState(false);
+  const [reportOpen, setReport] = useState(false);
+  const [shared, setShared]     = useState(false);
   const TOTAL = 20;
 
   useEffect(() => {
@@ -138,28 +135,42 @@ function CoupleResultScreen({ coupleCode, navigation }) {
       : Alert.alert(title, msg, [{ text: '리포트 열기 🎁', onPress: () => setReport(true) }]);
   };
 
-  // ── 이메일 리드 제출 핸들러 ──────────────────────────────────
-  const handleLeadSubmit = async () => {
-    const trimmed = email.trim();
-    if (!trimmed || !trimmed.includes('@')) {
-      Platform.OS === 'web' ? window.alert('올바른 이메일 주소를 입력해 주세요.') : Alert.alert('알림', '올바른 이메일 주소를 입력해 주세요.');
-      return;
+  // ── 결과 공유 핸들러 ─────────────────────────────────────────
+  const handleShare = async () => {
+    const base = typeof window !== 'undefined' ? window.location.origin : 'https://half-and-half-nine.vercel.app';
+    const shareUrl = base;
+    trackEvent('result_share_clicked', { couple_code: coupleCode, match_rate: rate });
+
+    if (Platform.OS === 'web' && typeof window !== 'undefined') {
+      // 카카오 공유 시도
+      const Kakao = window.Kakao;
+      if (Kakao) {
+        if (!Kakao.isInitialized()) Kakao.init('5794780a6ba882582fb21d5794ae3007');
+        try {
+          Kakao.Share.sendDefault({
+            objectType: 'feed',
+            content: {
+              title: `${titleData.emoji} 우리 커플 가치관 일치율 ${rate}%나 됐어!`,
+              description: `${titleData.title} — 너도 연인이랑 해봐 👇`,
+              imageUrl: 'https://half-and-half-nine.vercel.app/og-image.png',
+              link: { mobileWebUrl: shareUrl, webUrl: shareUrl },
+            },
+            buttons: [{ title: '나도 해보기', link: { mobileWebUrl: shareUrl, webUrl: shareUrl } }],
+          });
+          setShared(true);
+          setTimeout(() => setShared(false), 3000);
+          return;
+        } catch (e) {
+          console.warn('[Kakao] share error:', e);
+        }
+      }
     }
-    setEmailSending(true);
+    // fallback: 클립보드 복사
     try {
-      await push(ref(db, 'premium_leads'), {
-        email: trimmed,
-        coupleCode,
-        matchRate: rate,
-        createdAt: new Date().toISOString(),
-      });
-      setEmailDone(true);
-      trackEvent('premium_lead_submitted', { couple_code: coupleCode, match_rate: rate });
-    } catch (e) {
-      console.error('Lead submit failed:', e);
-    } finally {
-      setEmailSending(false);
-    }
+      await Clipboard.setStringAsync(shareUrl);
+      setShared(true);
+      setTimeout(() => setShared(false), 3000);
+    } catch (e) {}
   };
 
   if (status === 'loading') return (
@@ -241,16 +252,6 @@ function CoupleResultScreen({ coupleCode, navigation }) {
               </View>
             ))}
 
-            {/* 브리지: 솔루션 CTA */}
-            <View style={cs.bridgeBox}>
-              <Text style={cs.bridgeText}>
-                서로 다른 가치관 <Text style={cs.bridgeHighlight}>{spicy.length}개 영역</Text>에 대해{'\n'}
-                갈등을 예방할 솔루션을 원하시나요?
-              </Text>
-              <TouchableOpacity style={cs.bridgeBtn} onPress={() => setLeadModal(true)} activeOpacity={0.88}>
-                <Text style={cs.bridgeBtnText}>🎁 AI 리포트 무료로 받기 (선착순)</Text>
-              </TouchableOpacity>
-            </View>
           </View>
         )}
 
@@ -282,59 +283,25 @@ function CoupleResultScreen({ coupleCode, navigation }) {
         {/* ── 6. 더미 리포트 ───────────────────────────────────── */}
         {reportOpen && <DummyReport catCount={catCount} unmatched={unmatched} rate={rate} />}
 
+        {/* ── 공유 버튼 ────────────────────────────────────────── */}
+        <View style={cs.shareSection}>
+          <Text style={cs.shareLabel}>결과가 마음에 들었나요? 친구들에게 소문내 주세요 🙌</Text>
+          <TouchableOpacity
+            style={[cs.shareBtn, shared && cs.shareBtnDone]}
+            onPress={handleShare}
+            activeOpacity={0.88}
+          >
+            <Text style={cs.shareBtnText}>
+              {shared ? '✅ 공유 완료!' : '💬 카카오톡으로 공유하기'}
+            </Text>
+            {!shared && <Text style={cs.shareBtnSub}>링크가 없으면 자동으로 클립보드에 복사돼요</Text>}
+          </TouchableOpacity>
+        </View>
+
         <TouchableOpacity style={cs.ghostBtn} onPress={() => navigation.replace('Lobby')}>
           <Text style={cs.ghostBtnText}>홈으로 돌아가기</Text>
         </TouchableOpacity>
       </ScrollView>
-
-      {/* ── 이메일 리드 모달 ─────────────────────────────────── */}
-      {leadModal && (
-        <View style={cs.modalOverlay}>
-          <View style={cs.modalBox}>
-            {emailDone ? (
-              <>
-                <Text style={cs.modalEmoji}>🎉</Text>
-                <Text style={cs.modalDoneTitle}>신청 완료!</Text>
-                <Text style={cs.modalDoneDesc}>입력하신 이메일로 리포트를 보내드릴게요.{'\n'}조금만 기다려 주세요!</Text>
-                <TouchableOpacity style={cs.modalCloseBtn} onPress={() => { setLeadModal(false); setEmailDone(false); setEmail(''); }}>
-                  <Text style={cs.modalCloseBtnText}>닫기</Text>
-                </TouchableOpacity>
-              </>
-            ) : (
-              <>
-                <TouchableOpacity style={cs.modalDismiss} onPress={() => setLeadModal(false)}>
-                  <Text style={cs.modalDismissTxt}>✕</Text>
-                </TouchableOpacity>
-                <Text style={cs.modalTitle}>💌 AI 심층 리포트 무료 신청</Text>
-                <Text style={cs.modalDesc}>
-                  두 분의 가치관 불일치 영역을 심층 분석한{'\n'}맞춤형 AI 리포트를 이메일로 보내드려요.
-                </Text>
-                <TextInput
-                  style={cs.emailInput}
-                  placeholder="이메일 주소를 입력해 주세요"
-                  placeholderTextColor="#9CA3AF"
-                  value={email}
-                  onChangeText={setEmail}
-                  keyboardType="email-address"
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                />
-                <TouchableOpacity
-                  style={[cs.modalSubmitBtn, (!email.trim() || emailSending) && cs.modalSubmitBtnDisabled]}
-                  onPress={handleLeadSubmit}
-                  disabled={!email.trim() || emailSending}
-                  activeOpacity={0.88}
-                >
-                  <Text style={cs.modalSubmitBtnText}>
-                    {emailSending ? '신청 중...' : '무료로 받기 →'}
-                  </Text>
-                </TouchableOpacity>
-                <Text style={cs.modalNote}>스팸 없이 리포트만 발송해 드려요.</Text>
-              </>
-            )}
-          </View>
-        </View>
-      )}
     </ScreenShell>
   );
 }
@@ -805,30 +772,13 @@ const cs = StyleSheet.create({
   catBarFill:  { height: '100%', borderRadius: 4 },
   catPct:      { fontSize: 12, fontWeight: '800', textAlign: 'right' },
 
-  // 이메일 리드 CTA
-  leadCta:         { backgroundColor: '#F0FDF4', borderRadius: 20, padding: 22, alignItems: 'center', gap: 10, borderWidth: 1.5, borderColor: '#86EFAC' },
-  leadCtaTitle:    { fontSize: 16, fontWeight: '900', color: '#15803D', textAlign: 'center' },
-  leadCtaSub:      { fontSize: 12, color: '#4ADE80', fontWeight: '600' },
-  leadCtaBtn:      { backgroundColor: '#16A34A', borderRadius: 14, paddingVertical: 14, paddingHorizontal: 32 },
-  leadCtaBtnText:  { color: '#FFF', fontSize: 15, fontWeight: '800' },
-
-  // 이메일 모달
-  modalOverlay:     { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end', zIndex: 100 },
-  modalBox:         { backgroundColor: '#FFFFFF', borderTopLeftRadius: 28, borderTopRightRadius: 28, padding: 28, gap: 14, alignItems: 'center' },
-  modalDismiss:     { alignSelf: 'flex-end', padding: 4 },
-  modalDismissTxt:  { fontSize: 16, color: '#9CA3AF' },
-  modalTitle:       { fontSize: 18, fontWeight: '900', color: '#1A1A1A', textAlign: 'center' },
-  modalDesc:        { fontSize: 13, color: '#6B7280', textAlign: 'center', lineHeight: 20 },
-  emailInput:       { width: '100%', borderWidth: 1.5, borderColor: '#D1D5DB', borderRadius: 14, paddingHorizontal: 16, paddingVertical: 14, fontSize: 15, color: '#1A1A1A', backgroundColor: '#F9FAFB' },
-  modalSubmitBtn:        { width: '100%', backgroundColor: '#1A1A1A', borderRadius: 14, paddingVertical: 16, alignItems: 'center' },
-  modalSubmitBtnDisabled: { opacity: 0.4 },
-  modalSubmitBtnText:     { color: '#FFF', fontSize: 16, fontWeight: '800' },
-  modalNote:        { fontSize: 11, color: '#9CA3AF' },
-  modalEmoji:       { fontSize: 48 },
-  modalDoneTitle:   { fontSize: 20, fontWeight: '900', color: '#1A1A1A' },
-  modalDoneDesc:    { fontSize: 14, color: '#6B7280', textAlign: 'center', lineHeight: 22 },
-  modalCloseBtn:    { width: '100%', borderWidth: 1.5, borderColor: '#E5E7EB', borderRadius: 14, paddingVertical: 14, alignItems: 'center' },
-  modalCloseBtnText: { color: '#9CA3AF', fontSize: 14, fontWeight: '600' },
+  // 공유 버튼 섹션
+  shareSection:  { alignItems: 'center', gap: 10 },
+  shareLabel:    { fontSize: 13, color: '#6B7280', textAlign: 'center', lineHeight: 20 },
+  shareBtn:      { width: '100%', backgroundColor: '#FEE500', borderRadius: 16, paddingVertical: 18, alignItems: 'center', gap: 4 },
+  shareBtnDone:  { backgroundColor: '#16A34A' },
+  shareBtnText:  { fontSize: 16, fontWeight: '900', color: '#191600' },
+  shareBtnSub:   { fontSize: 11, color: 'rgba(25,22,0,0.5)', fontWeight: '600' },
 });
 
 // ── DummyReport 스타일 ───────────────────────────────────────────────
