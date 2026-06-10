@@ -46,7 +46,7 @@ export default function LobbyScreen({ navigation }) {
 
         <TouchableOpacity style={[styles.largeCard, styles.familyCard]} onPress={() => startGame('시댁')}>
           <Text style={styles.cardEmoji}>🏠</Text>
-          <Text style={styles.cardTitle}>시댁 &amp; 처가</Text>
+          <Text style={styles.cardTitle}>서로의 가족</Text>
           <Text style={styles.cardSub}>명절·용돈·동거… 현실 부부의 가장 뜨거운 갈등 지점</Text>
         </TouchableOpacity>
 

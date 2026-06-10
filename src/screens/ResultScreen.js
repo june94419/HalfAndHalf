@@ -12,7 +12,7 @@ import { BALANCE_QUESTIONS } from '../data/balanceQuestions';
 import ScreenShell from '../components/ScreenShell';
 import { trackEvent } from '../utils/analytics';
 
-const CATEGORY_LABEL = { '돈': '돈 & 재테크', '시댁': '시댁 & 처가', '라이프': '라이프스타일' };
+const CATEGORY_LABEL = { '돈': '돈 & 재테크', '시댁': '서로의 가족', '라이프': '라이프스타일' };
 const getChoiceText = (q, c) => c === 'A' ? q.questionA : c === 'B' ? q.questionB : '보류';
 
 // ── 일치율에 따른 색상 ──────────────────────────────────────────────
@@ -45,7 +45,7 @@ const coupleTitle = (r) => {
 // ── 카테고리별 일치율 계산 ───────────────────────────────────────────
 const catMatchRate = (catCount) => [
   { key: '돈',   emoji: '💰', label: '돈 & 재테크' },
-  { key: '시댁', emoji: '🏠', label: '시댁 & 처가' },
+  { key: '시댁', emoji: '🏠', label: '서로의 가족' },
   { key: '라이프', emoji: '🌿', label: '라이프스타일' },
 ].map(({ key, emoji, label }) => {
   const [total, unmatched] = catCount[key] ?? [0, 0];
@@ -337,7 +337,7 @@ function CoupleResultScreen({ coupleCode, navigation }) {
 function DummyReport({ catCount, unmatched, rate }) {
   const cats = [
     { key: '돈',    label: '💰 돈 & 재테크' },
-    { key: '시댁',  label: '🏠 시댁 & 처가' },
+    { key: '시댁',  label: '🏠 서로의 가족' },
     { key: '라이프', label: '🌿 라이프스타일' },
   ];
 
