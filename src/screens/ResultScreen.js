@@ -13,7 +13,7 @@ import ScreenShell from '../components/ScreenShell';
 import { trackEvent } from '../utils/analytics';
 
 const CATEGORY_LABEL = { '돈': '돈 & 재테크', '시댁': '시댁 & 처가', '라이프': '라이프스타일' };
-const getChoiceText = (q, c) => c === 'A' ? q.questionA : q.questionB;
+const getChoiceText = (q, c) => c === 'A' ? q.questionA : c === 'B' ? q.questionB : '보류';
 
 // ── 일치율에 따른 색상 ──────────────────────────────────────────────
 const rateColor = (r) => r >= 80 ? '#16A34A' : r >= 60 ? '#D97706' : r >= 40 ? '#DC2626' : '#7C3AED';
@@ -71,10 +71,10 @@ function CoupleResultScreen({ coupleCode, navigation }) {
   const [status, setStatus]             = useState('loading');
   const [matchCount, setMatch]          = useState(0);
   const [unmatched, setUnmatched]       = useState([]);
+  const [skippedBoth, setSkippedBoth]   = useState([]);
   const [catCount, setCatCount]         = useState({ '돈': [0, 0], '시댁': [0, 0], '라이프': [0, 0] });
   const [reportOpen, setReport] = useState(false);
   const [shared, setShared]     = useState(false);
-  const TOTAL = 20;
 
   useEffect(() => {
     (async () => {
@@ -86,23 +86,31 @@ function CoupleResultScreen({ coupleCode, navigation }) {
 
         let matched = 0;
         const unmatchedList = [];
+        const skippedBothList = [];
         const cc = { '돈': [0, 0], '시댁': [0, 0], '라이프': [0, 0] };
 
         Object.keys(creatorAnswers).forEach(idStr => {
           const q = BALANCE_QUESTIONS.find(q => q.id === Number(idStr));
           if (!q) return;
+          const cA = creatorAnswers[idStr];
+          const cB = partnerAnswers[idStr];
+          if (cA === 'skipped' && cB === 'skipped') {
+            skippedBothList.push({ q });
+            return;
+          }
           const type = q.type;
           if (cc[type]) cc[type][0]++;
-          if (creatorAnswers[idStr] === partnerAnswers[idStr]) {
+          if (cA === cB) {
             matched++;
           } else {
             if (cc[type]) cc[type][1]++;
-            unmatchedList.push({ q, creatorChoice: creatorAnswers[idStr], partnerChoice: partnerAnswers[idStr] ?? '?' });
+            unmatchedList.push({ q, creatorChoice: cA, partnerChoice: cB ?? '?' });
           }
         });
 
         setMatch(matched);
         setUnmatched(unmatchedList);
+        setSkippedBoth(skippedBothList);
         setCatCount(cc);
         setStatus('ready');
         trackEvent('partner_result_viewed', {
@@ -117,11 +125,12 @@ function CoupleResultScreen({ coupleCode, navigation }) {
     })();
   }, [coupleCode]);
 
-  const rate       = Math.round((matchCount / TOTAL) * 100);
-  const color      = rateColor(rate);
-  const titleData  = coupleTitle(rate);
-  const catBars    = catMatchRate(catCount);
-  const spicy      = unmatched.slice(0, 3);
+  const answeredTotal = matchCount + unmatched.length;
+  const rate          = answeredTotal > 0 ? Math.round((matchCount / answeredTotal) * 100) : 0;
+  const color         = rateColor(rate);
+  const titleData     = coupleTitle(rate);
+  const catBars       = catMatchRate(catCount);
+  const spicy         = unmatched.slice(0, 3);
 
   // ── 기존 결제 배너 핸들러 ────────────────────────────────────
   const handlePayment = () => {
@@ -213,8 +222,10 @@ function CoupleResultScreen({ coupleCode, navigation }) {
             <View style={[cs.gaugeFill, { width: `${rate}%`, backgroundColor: color }]} />
           </View>
           <Text style={cs.matchCount}>
-            20문항 중 <Text style={{ color, fontWeight: '900' }}>{matchCount}문항 일치</Text>
-            {' '}· {TOTAL - matchCount}문항 불일치
+            {answeredTotal}문항 중{' '}
+            <Text style={{ color, fontWeight: '900' }}>{matchCount}문항 일치</Text>
+            {' '}· {unmatched.length}문항 불일치
+            {skippedBoth.length > 0 && ` · ${skippedBoth.length}문항 보류`}
           </Text>
         </View>
 
@@ -255,7 +266,21 @@ function CoupleResultScreen({ coupleCode, navigation }) {
           </View>
         )}
 
-        {/* ── 5. 잠금 배너 (Fake Door) ────────────────────────── */}
+        {/* ── 5. 두 분 모두 보류한 문항 ──────────────────────── */}
+        {skippedBoth.length > 0 && (
+          <View style={cs.section}>
+            <Text style={cs.sectionTitle}>⏭️ 두 분 모두 보류한 문항</Text>
+            <Text style={cs.sectionDesc}>함께 다시 이야기해봐도 좋을 질문들이에요</Text>
+            {skippedBoth.map(({ q }) => (
+              <View key={q.id} style={cs.skippedCard}>
+                <Text style={cs.spicyTag}>{q.tag}</Text>
+                <Text style={cs.spicyCriteria}>{q.criteria}</Text>
+              </View>
+            ))}
+          </View>
+        )}
+
+        {/* ── 6. 잠금 배너 (Fake Door) ────────────────────────── */}
         <View style={cs.lockBanner}>
           <View style={cs.lockHeader}>
             <Text style={cs.lockIcon}>🔒</Text>
@@ -280,10 +305,10 @@ function CoupleResultScreen({ coupleCode, navigation }) {
           </TouchableOpacity>
         </View>
 
-        {/* ── 6. 더미 리포트 ───────────────────────────────────── */}
+        {/* ── 7. 더미 리포트 ───────────────────────────────────── */}
         {reportOpen && <DummyReport catCount={catCount} unmatched={unmatched} rate={rate} />}
 
-        {/* ── 공유 버튼 ────────────────────────────────────────── */}
+        {/* ── 8. 공유 버튼 ─────────────────────────────────────── */}
         <View style={cs.shareSection}>
           <Text style={cs.shareLabel}>결과가 마음에 들었나요? 친구들에게 소문내 주세요 🙌</Text>
           <TouchableOpacity
@@ -568,19 +593,23 @@ export default function ResultScreen({ route, navigation }) {
   };
 
   const buildComparison = ({ answersA, answersB, category, compromises: saved }) => {
-    const matching = [], different = [];
+    const matching = [], different = [], skippedBoth = [];
     Object.keys(answersA).forEach(idStr => {
       const question = BALANCE_QUESTIONS.find(q => q.id === Number(idStr));
       if (!question) return;
       const choiceA = answersA[idStr];
       const choiceB = answersB?.[idStr];
+      if (choiceA === 'skipped' && choiceB === 'skipped') {
+        skippedBoth.push({ question });
+        return;
+      }
       (choiceA === choiceB ? matching : different).push(
         choiceA === choiceB
           ? { question, choice: choiceA }
           : { question, choiceA, choiceB: choiceB ?? '?' }
       );
     });
-    setComparison({ category, matching, different });
+    setComparison({ category, matching, different, skippedBoth });
     if (saved) setCompromises(saved);
   };
 
@@ -654,7 +683,7 @@ export default function ResultScreen({ route, navigation }) {
   );
 
   // ── UserB 비교 결과 ─────────────────────────────────────────────
-  const { matching, different } = comparison;
+  const { matching, different, skippedBoth = [] } = comparison;
   return (
     <ScreenShell contentStyle={styles.scrollShell}>
       <ScrollView style={{ flex: 1 }} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
@@ -693,6 +722,16 @@ export default function ResultScreen({ route, navigation }) {
           <TouchableOpacity style={[styles.primaryBtn, compromiseSaved && styles.primaryBtnGreen, { marginBottom: 10 }]} onPress={handleSaveCompromises} disabled={savingCompromise}>
             <Text style={styles.primaryBtnText}>{compromiseSaved ? '✅ 타협점이 저장됐어요!' : savingCompromise ? '저장 중...' : '우리만의 타협점 저장'}</Text>
           </TouchableOpacity>
+        )}
+        {skippedBoth.length > 0 && (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>⏭️ 두 분 모두 보류한 문항</Text>
+            {skippedBoth.map(({ question }) => (
+              <View key={question.id} style={styles.skippedCard}>
+                <Text style={styles.qCriteria}>{question.criteria}</Text>
+              </View>
+            ))}
+          </View>
         )}
         <TouchableOpacity style={styles.archiveBtn} onPress={handleArchivePress}><Text style={styles.archiveBtnText}>🔒 우리만의 가치관 백서 확인하기</Text></TouchableOpacity>
         <TouchableOpacity style={styles.ghostBtn} onPress={goHome}><Text style={styles.ghostBtnText}>홈으로 돌아가기</Text></TouchableOpacity>
@@ -750,6 +789,9 @@ const cs = StyleSheet.create({
 
   // 섹션 설명
   sectionDesc: { fontSize: 12, color: '#9CA3AF', marginBottom: 8 },
+
+  // 보류 카드
+  skippedCard: { backgroundColor: '#F9FAFB', borderWidth: 1.5, borderColor: '#E5E7EB', borderRadius: 16, padding: 16, gap: 4 },
 
   // 불일치 브리지 CTA
   bridgeBox:       { backgroundColor: '#F5F3FF', borderRadius: 16, padding: 18, alignItems: 'center', gap: 12, borderWidth: 1.5, borderColor: '#DDD6FE', marginTop: 4 },
@@ -850,4 +892,5 @@ const styles = StyleSheet.create({
   tagText:          { fontSize: 10, fontWeight: '800', color: '#4B5563' },
   choiceText:       { flex: 1, fontSize: 12, color: '#374151', lineHeight: 18 },
   compromiseInput:  { borderWidth: 1, borderColor: '#D1D5DB', borderRadius: 10, padding: 10, fontSize: 13, color: '#1A1A1A', marginTop: 4, minHeight: 60, textAlignVertical: 'top', backgroundColor: '#FFFFFF' },
+  skippedCard:      { backgroundColor: '#F9FAFB', borderWidth: 1.5, borderColor: '#E5E7EB', borderRadius: 16, padding: 16, marginBottom: 10 },
 });
