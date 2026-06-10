@@ -6,6 +6,7 @@ import * as Linking from 'expo-linking';
 
 import { AuthProvider, useAuth } from './src/context/AuthContext';
 import { PENDING_CODE_KEY }       from './src/screens/InviteScreen';
+import { initGA }                 from './src/utils/analytics';
 import LobbyScreen  from './src/screens/LobbyScreen';
 import GameScreen   from './src/screens/GameScreen';
 import ResultScreen from './src/screens/ResultScreen';
@@ -68,6 +69,7 @@ function InnerApp() {
 }
 
 export default function App() {
+  initGA(); // GA4 초기화 (웹 전용, 1회)
   return (
     <AuthProvider>
       <NavigationContainer linking={linking}>

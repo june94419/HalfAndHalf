@@ -1,23 +1,26 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, ActivityIndicator } from 'react-native';
+import {
+  View, Text, TouchableOpacity, StyleSheet,
+  ActivityIndicator, ScrollView,
+} from 'react-native';
 import { get, ref, update } from 'firebase/database';
 import { auth, db } from '../../firebase';
 import { BALANCE_QUESTIONS } from '../data/balanceQuestions';
 import ScreenShell from '../components/ScreenShell';
+import { trackEvent } from '../utils/analytics';
 
 export default function GameScreen({ route, navigation }) {
   const { questions: passedQuestions, category: passedCategory, roomId, coupleCode, mode } = route.params;
 
-  const [questions, setQuestions] = useState(passedQuestions ?? []);
-  const [category, setCategory] = useState(passedCategory ?? '');
-  const [loading, setLoading] = useState(!!roomId);
-  const [submitting, setSubmitting] = useState(false);
+  const [questions, setQuestions]     = useState(passedQuestions ?? []);
+  const [category, setCategory]       = useState(passedCategory ?? '');
+  const [loading, setLoading]         = useState(!!roomId);
+  const [submitting, setSubmitting]   = useState(false);
   const [currentIndex, setCurrentIndex] = useState(0);
-  const [voted, setVoted] = useState(false);
-  const [voteStats, setVoteStats] = useState({ a: 0, b: 0 });
-  const [history, setHistory] = useState([]);
+  const [voted, setVoted]             = useState(false);
+  const [voteStats, setVoteStats]     = useState({ a: 0, b: 0 });
+  const [history, setHistory]         = useState([]);
 
-  // ?room= 파라미터를 지우고 로비로 이동
   const handleGoLobby = () => {
     if (typeof window !== 'undefined' && window.history) {
       window.history.replaceState({}, document.title, window.location.pathname);
@@ -25,7 +28,6 @@ export default function GameScreen({ route, navigation }) {
     navigation.navigate('Lobby');
   };
 
-  // roomId가 있으면 Firebase에서 방 데이터를 읽어 질문 세트를 구성
   useEffect(() => {
     if (!roomId) return;
     (async () => {
@@ -46,6 +48,13 @@ export default function GameScreen({ route, navigation }) {
     })();
   }, []);
 
+  // GA4: 첫 문제 렌더 시 게임 시작 이벤트
+  useEffect(() => {
+    if (!loading && questions.length > 0) {
+      trackEvent('game_started', { category, mode: mode ?? 'solo', total_questions: questions.length });
+    }
+  }, [loading]);
+
   const currentQuestion = questions[currentIndex];
 
   const handleVote = (choice) => {
@@ -56,9 +65,9 @@ export default function GameScreen({ route, navigation }) {
     setHistory(prev => [...prev, { questionId: currentQuestion.id, choice }]);
   };
 
-  // ── 파트너 모드 제출: couples/ 업데이트 후 ResultScreen 이동 ──
   const handleSubmit = async (finalHistory) => {
     setSubmitting(true);
+    trackEvent('partner_answers_submitted', { coupleCode });
     try {
       const partnerAnswers = finalHistory.reduce((acc, { questionId, choice }) => {
         acc[questionId] = choice;
@@ -84,7 +93,6 @@ export default function GameScreen({ route, navigation }) {
       setVoted(false);
       return;
     }
-    // 마지막 문제 — 파트너 모드면 DB 업데이트, 아니면 기존 흐름
     if (mode === 'partner' && coupleCode) {
       handleSubmit(history);
     } else {
@@ -110,92 +118,129 @@ export default function GameScreen({ route, navigation }) {
   }
 
   return (
-    <ScreenShell rightAction={resetButton}>
-      <View style={styles.gameZone}>
-        <View style={styles.tagBadge}>
-          <Text style={styles.tagText}>
-            {currentQuestion.tag} ({currentIndex + 1} / {questions.length})
-          </Text>
+    <ScreenShell rightAction={resetButton} contentStyle={{ paddingHorizontal: 0, paddingTop: 0 }}>
+      <ScrollView
+        style={{ flex: 1 }}
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+      >
+        {/* 진행 표시 */}
+        <View style={styles.progressHeader}>
+          <View style={styles.progressBar}>
+            <View style={[styles.progressFill, { width: `${((currentIndex + 1) / questions.length) * 100}%` }]} />
+          </View>
+          <Text style={styles.progressText}>{currentIndex + 1} / {questions.length}</Text>
         </View>
 
-        <View style={styles.questionGuideContainer}>
+        {/* 카테고리 뱃지 */}
+        <View style={styles.tagBadge}>
+          <Text style={styles.tagText}>{currentQuestion.tag}</Text>
+        </View>
+
+        {/* 질문 */}
+        <View style={styles.questionBox}>
           <Text style={styles.questionGuideText}>
             Q. {currentQuestion.criteria || '둘 중 당신의 선택은?'}
           </Text>
         </View>
 
-        <View style={styles.balanceContainer}>
-          <TouchableOpacity
-            style={[styles.optionButton, voted && styles.disabledOption]}
-            onPress={() => handleVote('A')}
-            disabled={voted}
-          >
-            <View style={styles.optionBadgeA}><Text style={styles.optionBadgeText}>선택 A</Text></View>
-            <Text style={styles.questionText}>{currentQuestion.questionA}</Text>
-            <Text style={styles.descText}>{currentQuestion.descA}</Text>
-            {voted && <Text style={styles.statText}>{voteStats.a}%의 선택</Text>}
-          </TouchableOpacity>
+        {/* 선택지 A */}
+        <TouchableOpacity
+          style={[styles.optionButton, styles.optionA, voted && styles.votedOption]}
+          onPress={() => handleVote('A')}
+          disabled={voted}
+          activeOpacity={0.82}
+        >
+          <View style={styles.optionBadgeA}><Text style={styles.optionBadgeText}>A</Text></View>
+          <Text style={styles.questionText}>{currentQuestion.questionA}</Text>
+          <Text style={styles.descText}>{currentQuestion.descA}</Text>
+          {voted && <Text style={styles.statTextA}>{voteStats.a}%의 선택</Text>}
+        </TouchableOpacity>
 
-          <View style={styles.vsCircle}>
-            <Text style={styles.vsText}>VS</Text>
-          </View>
-
-          <TouchableOpacity
-            style={[styles.optionButton, styles.optionButtonB, voted && styles.disabledOption]}
-            onPress={() => handleVote('B')}
-            disabled={voted}
-          >
-            <View style={styles.optionBadgeB}><Text style={styles.optionBadgeText}>선택 B</Text></View>
-            <Text style={styles.questionText}>{currentQuestion.questionB}</Text>
-            <Text style={styles.descText}>{currentQuestion.descB}</Text>
-            {voted && <Text style={[styles.statText, styles.statTextB]}>{voteStats.b}%의 선택</Text>}
-          </TouchableOpacity>
+        {/* VS 구분선 */}
+        <View style={styles.vsRow}>
+          <View style={styles.vsDivider} />
+          <View style={styles.vsCircle}><Text style={styles.vsText}>VS</Text></View>
+          <View style={styles.vsDivider} />
         </View>
 
+        {/* 선택지 B */}
+        <TouchableOpacity
+          style={[styles.optionButton, styles.optionB, voted && styles.votedOption]}
+          onPress={() => handleVote('B')}
+          disabled={voted}
+          activeOpacity={0.82}
+        >
+          <View style={styles.optionBadgeB}><Text style={styles.optionBadgeText}>B</Text></View>
+          <Text style={styles.questionText}>{currentQuestion.questionB}</Text>
+          <Text style={styles.descText}>{currentQuestion.descB}</Text>
+          {voted && <Text style={styles.statTextB}>{voteStats.b}%의 선택</Text>}
+        </TouchableOpacity>
+
+        {/* 다음 버튼 */}
         {voted && (
           <TouchableOpacity
             style={[styles.nextButton, submitting && styles.nextButtonDisabled]}
             onPress={handleNext}
             disabled={submitting}
+            activeOpacity={0.88}
           >
             <Text style={styles.nextButtonText}>
               {submitting
                 ? '제출 중...'
                 : currentIndex + 1 === questions.length
                   ? '모든 가치관 결과 확인 🏁'
-                  : '다음 질문 매치 ➡️'}
+                  : '다음 질문 ➡️'}
             </Text>
           </TouchableOpacity>
         )}
-      </View>
+      </ScrollView>
     </ScreenShell>
   );
 }
 
 const styles = StyleSheet.create({
-  loadingZone: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  loadingText: { marginTop: 12, fontSize: 14, color: '#6B7280' },
-  gameZone: { flex: 1, justifyContent: 'center' },
-  resetButton: { position: 'absolute', right: 15, backgroundColor: '#F3F4F6', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20 },
-  resetText: { fontSize: 12, color: '#666', fontWeight: '600' },
-  tagBadge: { alignSelf: 'center', backgroundColor: '#1A1A1A', paddingHorizontal: 12, paddingVertical: 5, borderRadius: 20, marginBottom: 10 },
-  tagText: { color: '#FFF', fontSize: 11, fontWeight: '700' },
-  questionGuideContainer: { backgroundColor: '#F9FAFB', borderWidth: 1, borderColor: '#E5E7EB', borderRadius: 14, padding: 14, marginBottom: 14, alignItems: 'center' },
-  questionGuideText: { fontSize: 15, fontWeight: '900', color: '#111827', textAlign: 'center', lineHeight: 22 },
-  balanceContainer: { flex: 1, maxHeight: 420, justifyContent: 'space-between', position: 'relative' },
-  optionButton: { flex: 1, backgroundColor: '#FFF9F9', borderWidth: 2, borderColor: '#FFEBEB', borderRadius: 20, padding: 18, justifyContent: 'center', alignItems: 'center', marginBottom: 6, position: 'relative' },
-  optionButtonB: { backgroundColor: '#F9FCFF', borderColor: '#EBF4FF', marginBottom: 0, marginTop: 6 },
-  optionBadgeA: { position: 'absolute', top: 10, left: 12, backgroundColor: '#FEE2E2', paddingHorizontal: 8, paddingVertical: 2, borderRadius: 8 },
-  optionBadgeB: { position: 'absolute', top: 10, left: 12, backgroundColor: '#DBEAFE', paddingHorizontal: 8, paddingVertical: 2, borderRadius: 8 },
-  optionBadgeText: { fontSize: 10, fontWeight: '700', color: '#4B5563' },
-  disabledOption: { opacity: 0.9 },
-  questionText: { fontSize: 15, fontWeight: '900', color: '#1A1A1A', textAlign: 'center', marginBottom: 4, marginTop: 10 },
-  descText: { fontSize: 12, color: '#6B7280', textAlign: 'center', paddingHorizontal: 10 },
-  statText: { fontSize: 20, fontWeight: '900', color: '#EF4444', marginTop: 8 },
-  statTextB: { color: '#3B82F6' },
-  vsCircle: { position: 'absolute', top: '50%', left: '50%', transform: [{ translateX: -18 }, { translateY: -18 }], width: 36, height: 36, borderRadius: 18, backgroundColor: '#1A1A1A', justifyContent: 'center', alignItems: 'center', zIndex: 10 },
-  vsText: { color: '#FFF', fontSize: 11, fontWeight: '900' },
-  nextButton: { backgroundColor: '#1A1A1A', paddingVertical: 14, borderRadius: 14, marginTop: 14, alignItems: 'center' },
+  loadingZone:   { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  loadingText:   { marginTop: 12, fontSize: 14, color: '#6B7280' },
+  scrollContent: { paddingHorizontal: 20, paddingBottom: 32, paddingTop: 8 },
+
+  // 진행바
+  progressHeader: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 16 },
+  progressBar:    { flex: 1, height: 5, backgroundColor: '#E5E7EB', borderRadius: 3, overflow: 'hidden' },
+  progressFill:   { height: '100%', backgroundColor: '#1A1A1A', borderRadius: 3 },
+  progressText:   { fontSize: 12, fontWeight: '700', color: '#9CA3AF', minWidth: 36, textAlign: 'right' },
+
+  // 뱃지 & 질문
+  tagBadge:      { alignSelf: 'center', backgroundColor: '#F3F4F6', paddingHorizontal: 12, paddingVertical: 5, borderRadius: 20, marginBottom: 12 },
+  tagText:       { fontSize: 11, fontWeight: '700', color: '#6B7280' },
+  questionBox:   { backgroundColor: '#FAFAFA', borderWidth: 1, borderColor: '#E5E7EB', borderRadius: 16, padding: 16, marginBottom: 16, alignItems: 'center' },
+  questionGuideText: { fontSize: 15, fontWeight: '800', color: '#111827', textAlign: 'center', lineHeight: 24 },
+
+  // 선택지 버튼
+  optionButton:  { borderWidth: 1.5, borderRadius: 20, padding: 20, alignItems: 'center', minHeight: 120 },
+  optionA:       { backgroundColor: '#FFF9F9', borderColor: '#FECDD3' },
+  optionB:       { backgroundColor: '#F0F9FF', borderColor: '#BAE6FD' },
+  votedOption:   { opacity: 0.88 },
+  optionBadgeA:  { backgroundColor: '#FEE2E2', paddingHorizontal: 10, paddingVertical: 3, borderRadius: 10, marginBottom: 10 },
+  optionBadgeB:  { backgroundColor: '#DBEAFE', paddingHorizontal: 10, paddingVertical: 3, borderRadius: 10, marginBottom: 10 },
+  optionBadgeText: { fontSize: 11, fontWeight: '800', color: '#4B5563' },
+  questionText:  { fontSize: 15, fontWeight: '900', color: '#1A1A1A', textAlign: 'center', marginBottom: 6, lineHeight: 22 },
+  descText:      { fontSize: 12, color: '#6B7280', textAlign: 'center', lineHeight: 18 },
+  statTextA:     { fontSize: 22, fontWeight: '900', color: '#E11D48', marginTop: 10 },
+  statTextB:     { fontSize: 22, fontWeight: '900', color: '#0284C7', marginTop: 10 },
+
+  // VS 구분선 (절대좌표 없이 인라인 배치)
+  vsRow:         { flexDirection: 'row', alignItems: 'center', marginVertical: -14, zIndex: 10 },
+  vsDivider:     { flex: 1, height: 1, backgroundColor: '#E5E7EB' },
+  vsCircle:      { width: 36, height: 36, borderRadius: 18, backgroundColor: '#1A1A1A', justifyContent: 'center', alignItems: 'center', marginHorizontal: 8 },
+  vsText:        { color: '#FFF', fontSize: 10, fontWeight: '900' },
+
+  // 다음 버튼
+  nextButton:         { backgroundColor: '#1A1A1A', paddingVertical: 16, borderRadius: 16, marginTop: 20, alignItems: 'center' },
   nextButtonDisabled: { opacity: 0.5 },
-  nextButtonText: { color: '#FFF', fontSize: 14, fontWeight: '700' },
+  nextButtonText:     { color: '#FFF', fontSize: 15, fontWeight: '700' },
+
+  resetButton: { position: 'absolute', right: 15, backgroundColor: '#F3F4F6', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 16 },
+  resetText:   { fontSize: 11, color: '#6B7280', fontWeight: '600' },
 });

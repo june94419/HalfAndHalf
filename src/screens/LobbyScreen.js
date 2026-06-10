@@ -2,6 +2,7 @@ import React, { useEffect } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Image, Platform } from 'react-native';
 import { BALANCE_QUESTIONS } from '../data/balanceQuestions';
 import ScreenShell from '../components/ScreenShell';
+import { trackEvent } from '../utils/analytics';
 
 export default function LobbyScreen({ navigation }) {
   useEffect(() => {
@@ -14,6 +15,7 @@ export default function LobbyScreen({ navigation }) {
   }, []);
 
   const startGame = (type) => {
+    trackEvent('game_start_button_clicked', { category: type });
     const filtered = BALANCE_QUESTIONS.filter(q => q.type === type);
     const shuffled = [...filtered].sort(() => 0.5 - Math.random());
     const questions = shuffled.slice(0, 20);

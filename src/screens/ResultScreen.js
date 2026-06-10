@@ -10,6 +10,7 @@ import * as Clipboard from 'expo-clipboard';
 import { auth, db } from '../../firebase';
 import { BALANCE_QUESTIONS } from '../data/balanceQuestions';
 import ScreenShell from '../components/ScreenShell';
+import { trackEvent } from '../utils/analytics';
 
 const CATEGORY_LABEL = { '돈': '돈 & 재테크', '시댁': '시댁 & 처가', '라이프': '라이프스타일' };
 const getChoiceText = (q, c) => c === 'A' ? q.questionA : q.questionB;
@@ -76,6 +77,12 @@ function CoupleResultScreen({ coupleCode, navigation }) {
         setUnmatched(unmatchedList);
         setCatCount(cc);
         setStatus('ready');
+        // GA4: 파트너 결과 확인 이벤트
+        trackEvent('partner_result_viewed', {
+          couple_code: coupleCode,
+          match_rate: Math.round((matched / 20) * 100),
+          unmatched_count: unmatchedList.length,
+        });
       } catch (e) {
         console.error('[CoupleResult]', e);
         setStatus('error');
@@ -364,6 +371,7 @@ export default function ResultScreen({ route, navigation }) {
   };
 
   const handleShare = async () => {
+    trackEvent('kakao_share_clicked', { type: 'room_link' });
     const base     = typeof window !== 'undefined' ? window.location.origin : 'https://half-and-half-nine.vercel.app';
     const shareUrl = `${base}?room=${createdRoomId}`;
     await Clipboard.setStringAsync(shareUrl);
