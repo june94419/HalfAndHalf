@@ -1,0 +1,40 @@
+{
+  "project_info": {
+    "project_number": "579857293853",
+    "firebase_url": "https://half-and-half-58c12-default-rtdb.asia-southeast1.firebasedatabase.app",
+    "project_id": "half-and-half-58c12",
+    "storage_bucket": "half-and-half-58c12.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:579857293853:android:ca4900850838187a63dcf4",
+        "android_client_info": {
+          "package_name": "com.halfandhalf.app"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "579857293853-s5ee4k8a3qak4do8fmsk0gh2lnmvq8mu.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDgB9pFaZ_OajStgwL7HjnR8BrXGnNZjR8"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "579857293853-s5ee4k8a3qak4do8fmsk0gh2lnmvq8mu.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

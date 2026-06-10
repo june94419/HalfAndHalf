@@ -40,8 +40,8 @@ yarn-error.*
 /ios
 /android
 
-# Firebase native config (contains private keys)
-google-services.json
+# Firebase native config
+# google-services.json 은 SDK 설정 파일(non-secret)이므로 git 추적 허용
 GoogleService-Info.plist
 
 # Claude Code local settings
