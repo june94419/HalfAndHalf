@@ -1,5 +1,29 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { View, Text, StyleSheet, Platform } from 'react-native';
+
+if (Platform.OS === 'web' && typeof document !== 'undefined') {
+  const styleId = '__rnw_scroll_fix';
+  if (!document.getElementById(styleId)) {
+    const tag = document.createElement('style');
+    tag.id = styleId;
+    tag.textContent = `
+      html, body {
+        height: auto !important;
+        overflow-y: auto !important;
+        -webkit-overflow-scrolling: touch !important;
+      }
+      #root, [data-reactroot] {
+        height: auto !important;
+        min-height: 100dvh !important;
+        overflow-y: visible !important;
+      }
+      div[style*="overflow: hidden"], div[style*="overflow:hidden"] {
+        -webkit-overflow-scrolling: touch !important;
+      }
+    `;
+    document.head.appendChild(tag);
+  }
+}
 
 export default function ScreenShell({ rightAction, children, contentStyle }) {
   return (
