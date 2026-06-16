@@ -27,18 +27,20 @@ const styles = StyleSheet.create({
   mobileContainer: {
     width: '100%',
     maxWidth: 430,
-    // 웹: 100dvh로 모바일 브라우저 주소창까지 정확히 대응
-    // 네이티브: flex:1
     ...(Platform.OS === 'web'
-      ? { height: '100dvh' }
-      : { flex: 1 }),
+      ? {
+          height: '100dvh',
+          // iOS Safari: overflow:hidden + 고정 높이 조합이 자식 ScrollView 이벤트를
+          // 완전 차단함. visible로 열어서 자식이 자체 스크롤 컨테이너가 되도록 허용.
+          overflow: 'visible',
+        }
+      : { flex: 1, overflow: 'hidden' }),
     backgroundColor: '#FFFFFF',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.06,
     shadowRadius: 8,
     elevation: 3,
-    overflow: 'hidden',
   },
   header: {
     height: 52,
@@ -62,8 +64,5 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingTop: 12,
     paddingBottom: 16,
-    // 웹: overflow:hidden 부모(mobileContainer)가 스크롤 이벤트를 막으므로
-    // content 레이어에 명시적 스크롤 컨테이너를 열어줌
-    ...Platform.select({ web: { overflow: 'auto' } }),
   },
 });
