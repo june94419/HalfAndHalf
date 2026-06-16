@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import {
-  View, Text, TouchableOpacity, TextInput,  // TextInput: rooms/ 플로우 타협안 입력에서 사용
+  View, Text, TouchableOpacity, TextInput,
   ScrollView, StyleSheet, ActivityIndicator,
   Alert, Platform,
 } from 'react-native';
@@ -15,10 +15,8 @@ import { trackEvent } from '../utils/analytics';
 const CATEGORY_LABEL = { '돈': '돈 & 재테크', '시댁': '서로의 가족', '라이프': '라이프스타일' };
 const getChoiceText = (q, c) => c === 'A' ? q.questionA : c === 'B' ? q.questionB : '보류';
 
-// ── 일치율에 따른 색상 ──────────────────────────────────────────────
 const rateColor = (r) => r >= 80 ? '#16A34A' : r >= 60 ? '#D97706' : r >= 40 ? '#DC2626' : '#7C3AED';
 
-// ── 커플 성향 타이틀 ────────────────────────────────────────────────
 const coupleTitle = (r) => {
   if (r >= 85) return {
     emoji: '👑', title: '환상의 티키타카 부부',
@@ -42,7 +40,6 @@ const coupleTitle = (r) => {
   };
 };
 
-// ── 카테고리별 일치율 계산 ───────────────────────────────────────────
 const catMatchRate = (catCount) => [
   { key: '돈',   emoji: '💰', label: '돈 & 재테크' },
   { key: '시댁', emoji: '🏠', label: '서로의 가족' },
@@ -55,7 +52,6 @@ const catMatchRate = (catCount) => [
   return { key, emoji, label, pct, color, matched, total };
 });
 
-// ── 카테고리별 위험도 (DummyReport용) ────────────────────────────────
 const riskLevel = (unmatched, total) => {
   if (total === 0) return { label: '낮음', color: '#16A34A', pct: 15 };
   const r = unmatched / total;
@@ -64,9 +60,6 @@ const riskLevel = (unmatched, total) => {
   return { label: '낮음', color: '#16A34A', pct: 20 };
 };
 
-// ────────────────────────────────────────────────────────────────────
-// CoupleResultScreen — 커플 코드 기반 수익성 검증 화면
-// ────────────────────────────────────────────────────────────────────
 function CoupleResultScreen({ coupleCode, navigation }) {
   const [status, setStatus]             = useState('loading');
   const [matchCount, setMatch]          = useState(0);
@@ -77,6 +70,16 @@ function CoupleResultScreen({ coupleCode, navigation }) {
   const [shared, setShared]     = useState(false);
 
   useEffect(() => {
+    // ── Kakao SDK 선행 초기화 ──────────────────────────────────────────
+    // SDK는 public/index.html <script> 태그로 이미 동기 로드됨.
+    // 카카오 JavaScript 앱 키: 5794780a6ba882582fb21d5794ae3007
+    // init을 useEffect(마운트 시)에서 처리해야 버튼 클릭 시 동기 호출이
+    // iOS WebKit 유저 제스처 맥락으로 인정되어 딥링크가 바로 열림.
+    if (Platform.OS === 'web' && typeof window !== 'undefined') {
+      const K = window.Kakao;
+      if (K && !K.isInitialized()) K.init('5794780a6ba882582fb21d5794ae3007');
+    }
+
     (async () => {
       try {
         const snap = await get(ref(db, `couples/${coupleCode}`));
@@ -132,7 +135,6 @@ function CoupleResultScreen({ coupleCode, navigation }) {
   const catBars       = catMatchRate(catCount);
   const spicy         = unmatched.slice(0, 3);
 
-  // ── 기존 결제 배너 핸들러 ────────────────────────────────────
   const handlePayment = () => {
     push(ref(db, 'analytics_events'), {
       event: 'click_fake_payment', coupleCode, matchRate: rate,
@@ -144,42 +146,56 @@ function CoupleResultScreen({ coupleCode, navigation }) {
       : Alert.alert(title, msg, [{ text: '리포트 열기 🎁', onPress: () => setReport(true) }]);
   };
 
-  // ── 결과 공유 핸들러 ─────────────────────────────────────────
-  const handleShare = async () => {
+  // 공유 완료 피드백 헬퍼
+  const markShared = () => { setShared(true); setTimeout(() => setShared(false), 3000); };
+
+  const handleShare = () => {
     const base = typeof window !== 'undefined' ? window.location.origin : 'https://half-and-half-nine.vercel.app';
     const shareUrl = base;
     trackEvent('result_share_clicked', { couple_code: coupleCode, match_rate: rate });
 
     if (Platform.OS === 'web' && typeof window !== 'undefined') {
-      // 카카오 공유 시도
+
+      // ── 1순위: iOS·Android 네이티브 공유 시트 ─────────────────────────
+      // navigator.share → OS 공유 패널이 즉시 열려 카카오톡 아이콘을
+      // 바로 탭할 수 있음. 중간 웹 페이지 없이 앱 직접 런칭.
+      if (typeof navigator !== 'undefined' && navigator.share) {
+        navigator.share({
+          title: `${titleData.emoji} 반반 가치관 일치율 ${rate}%!`,
+          text: `${titleData.emoji} 우리 커플 가치관 일치율 ${rate}%나 됐어!\n${titleData.title} — 너도 연인이랑 해봐 👇`,
+          url: shareUrl,
+        })
+          .then(markShared)
+          .catch(() => {}); // 사용자 취소는 무시
+        return;
+      }
+
+      // ── 2순위: 카카오 SDK sendDefault (데스크톱) ──────────────────────
+      // 카카오 JavaScript 앱 키: 5794780a6ba882582fb21d5794ae3007
+      // init은 마운트 시 완료되어 있으므로 여기서 async 없이 동기 호출.
       const Kakao = window.Kakao;
-      if (Kakao) {
-        if (!Kakao.isInitialized()) Kakao.init('5794780a6ba882582fb21d5794ae3007');
+      if (Kakao && Kakao.isInitialized()) {
         try {
           Kakao.Share.sendDefault({
             objectType: 'feed',
             content: {
               title: `${titleData.emoji} 우리 커플 가치관 일치율 ${rate}%나 됐어!`,
               description: `${titleData.title} — 너도 연인이랑 해봐 👇`,
-              imageUrl: 'https://half-and-half-nine.vercel.app/og-image.png',
+              imageUrl: `${base}/og-image.png`,
               link: { mobileWebUrl: shareUrl, webUrl: shareUrl },
             },
             buttons: [{ title: '나도 해보기', link: { mobileWebUrl: shareUrl, webUrl: shareUrl } }],
           });
-          setShared(true);
-          setTimeout(() => setShared(false), 3000);
+          markShared();
           return;
         } catch (e) {
           console.warn('[Kakao] share error:', e);
         }
       }
     }
-    // fallback: 클립보드 복사
-    try {
-      await Clipboard.setStringAsync(shareUrl);
-      setShared(true);
-      setTimeout(() => setShared(false), 3000);
-    } catch (e) {}
+
+    // ── 3순위: 클립보드 복사 폴백 ─────────────────────────────────────
+    Clipboard.setStringAsync(shareUrl).then(markShared).catch(() => {});
   };
 
   if (status === 'loading') return (
@@ -207,14 +223,12 @@ function CoupleResultScreen({ coupleCode, navigation }) {
     <ScreenShell contentStyle={{ paddingHorizontal: 0, paddingTop: 0 }}>
       <ScrollView contentContainerStyle={cs.scroll} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
 
-        {/* ── 1. 커플 성향 타이틀 ────────────────────────────── */}
         <View style={[cs.titleCard, { backgroundColor: titleData.bg, borderColor: titleData.border }]}>
           <Text style={cs.titleEmoji}>{titleData.emoji}</Text>
           <Text style={[cs.titleText, { color: titleData.textColor }]}>{titleData.title}</Text>
           <Text style={cs.titleDesc}>{titleData.desc}</Text>
         </View>
 
-        {/* ── 2. 일치율 게이지 ────────────────────────────────── */}
         <View style={cs.matchCard}>
           <Text style={cs.matchLabel}>가치관 일치율</Text>
           <Text style={[cs.matchRate, { color }]}>{rate}%</Text>
@@ -229,7 +243,6 @@ function CoupleResultScreen({ coupleCode, navigation }) {
           </Text>
         </View>
 
-        {/* ── 3. 카테고리별 일치 점수 ────────────────────────── */}
         <View style={cs.catCard}>
           <Text style={cs.sectionTitle}>📊 영역별 가치관 일치 점수</Text>
           {catBars.map(({ key, emoji, label, pct, color: c, matched, total }) => (
@@ -243,7 +256,6 @@ function CoupleResultScreen({ coupleCode, navigation }) {
           ))}
         </View>
 
-        {/* ── 4. 서로 다른 의견 (실제 데이터, 최대 3개) ────────── */}
         {spicy.length > 0 && (
           <View style={cs.section}>
             <Text style={cs.sectionTitle}>🌶️ 서로 다른 의견</Text>
@@ -262,11 +274,9 @@ function CoupleResultScreen({ coupleCode, navigation }) {
                 </View>
               </View>
             ))}
-
           </View>
         )}
 
-        {/* ── 5. 두 분 모두 보류한 문항 ──────────────────────── */}
         {skippedBoth.length > 0 && (
           <View style={cs.section}>
             <Text style={cs.sectionTitle}>⏭️ 두 분 모두 보류한 문항</Text>
@@ -280,7 +290,6 @@ function CoupleResultScreen({ coupleCode, navigation }) {
           </View>
         )}
 
-        {/* ── 6. 잠금 배너 (Fake Door) ────────────────────────── */}
         <View style={cs.lockBanner}>
           <View style={cs.lockHeader}>
             <Text style={cs.lockIcon}>🔒</Text>
@@ -305,10 +314,8 @@ function CoupleResultScreen({ coupleCode, navigation }) {
           </TouchableOpacity>
         </View>
 
-        {/* ── 7. 더미 리포트 ───────────────────────────────────── */}
         {reportOpen && <DummyReport catCount={catCount} unmatched={unmatched} rate={rate} />}
 
-        {/* ── 8. 공유 버튼 ─────────────────────────────────────── */}
         <View style={cs.shareSection}>
           <Text style={cs.shareLabel}>결과가 마음에 들었나요? 친구들에게 소문내 주세요 🙌</Text>
           <TouchableOpacity
@@ -331,9 +338,6 @@ function CoupleResultScreen({ coupleCode, navigation }) {
   );
 }
 
-// ────────────────────────────────────────────────────────────────────
-// DummyReport — 잠금 해제 후 표시되는 더미 진단 리포트
-// ────────────────────────────────────────────────────────────────────
 function DummyReport({ catCount, unmatched, rate }) {
   const cats = [
     { key: '돈',    label: '💰 돈 & 재테크' },
@@ -362,7 +366,6 @@ function DummyReport({ catCount, unmatched, rate }) {
         <Text style={rp.headerSub}>AI 부부상담 전문가 분석 결과</Text>
       </View>
 
-      {/* AI 종합 진단 요약 */}
       <View style={rp.card}>
         <Text style={rp.cardTitle}>🤖 AI 종합 진단 요약</Text>
         <Text style={rp.cardBody}>
@@ -372,7 +375,6 @@ function DummyReport({ catCount, unmatched, rate }) {
         </Text>
       </View>
 
-      {/* 카테고리별 위험도 게이지 */}
       <View style={rp.card}>
         <Text style={rp.cardTitle}>📊 카테고리별 갈등 위험도</Text>
         {cats.map(({ key, label }) => {
@@ -390,7 +392,6 @@ function DummyReport({ catCount, unmatched, rate }) {
         })}
       </View>
 
-      {/* 선배 부부 조언 */}
       <View style={rp.card}>
         <Text style={rp.cardTitle}>👫 선배 부부들의 현실 조언</Text>
         {adviceList.map(({ emoji, title, body }) => (
@@ -404,7 +405,6 @@ function DummyReport({ catCount, unmatched, rate }) {
         ))}
       </View>
 
-      {/* 소통 가이드라인 */}
       <View style={rp.card}>
         <Text style={rp.cardTitle}>💬 밤에 안 싸우는 소통 가이드라인</Text>
         {guideList.map((g, i) => (
@@ -422,18 +422,13 @@ function DummyReport({ catCount, unmatched, rate }) {
   );
 }
 
-// ────────────────────────────────────────────────────────────────────
-// ResultScreen — 진입점: coupleCode / roomId / category 분기
-// ────────────────────────────────────────────────────────────────────
 export default function ResultScreen({ route, navigation }) {
   const { coupleCode, category: passedCategory, history, roomId } = route.params;
 
-  // 커플 코드 기반 신규 플로우
   if (coupleCode) {
     return <CoupleResultScreen coupleCode={coupleCode} navigation={navigation} />;
   }
 
-  // ── 이하 기존 rooms/ 플로우 (UserA / UserB) ──────────────────────
   const isUserB = !!roomId;
 
   const [createdRoomId, setCreatedRoomId] = useState(null);
@@ -480,6 +475,7 @@ export default function ResultScreen({ route, navigation }) {
     trackEvent('kakao_share_clicked', { type: 'room_link' });
     const base     = typeof window !== 'undefined' ? window.location.origin : 'https://half-and-half-nine.vercel.app';
     const shareUrl = `${base}?room=${createdRoomId}`;
+    const logoUrl  = `${base}/icon.png`; // 유저 A 링크 복사 플로우 로고 보정
     await Clipboard.setStringAsync(shareUrl);
     setCopied(true);
     setTimeout(() => setCopied(false), 2500);
@@ -492,7 +488,7 @@ export default function ResultScreen({ route, navigation }) {
           content: {
             title: '🤔 우리 연애 가치관은 몇 %나 맞을까?',
             description: '연인이 푸드·데이트·재무 취향 20문제를 풀고 기다리고 있어요. 지금 들어와서 조율해 보세요! 💕',
-            imageUrl: 'https://half-and-half-nine.vercel.app/favicon.ico',
+            imageUrl: logoUrl,
             link: { mobileWebUrl: shareUrl, webUrl: shareUrl },
           },
           buttons: [{ title: '가치관 조율하러 가기', link: { mobileWebUrl: shareUrl, webUrl: shareUrl } }],
@@ -505,7 +501,6 @@ export default function ResultScreen({ route, navigation }) {
     if (kakaoSharing) return;
     setKakaoSharing(true);
     try {
-      // ── 1. 커플 코드 생성 & DB 저장 ──────────────────────────
       const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
       let coupleCode = 'ROOM_';
       for (let i = 0; i < 6; i++) coupleCode += chars[Math.floor(Math.random() * 26)];
@@ -516,10 +511,7 @@ export default function ResultScreen({ route, navigation }) {
         status: 'progress', createdAt: new Date().toISOString(), fakePaid: false,
       });
 
-      // ── 2. 카카오 SDK 동적 로드 & 공유 (웹 전용) ─────────────
       if (Platform.OS === 'web' && typeof window !== 'undefined') {
-
-        // window.Kakao가 없으면 <script>를 동적으로 주입하고 onload 대기
         if (!window.Kakao) {
           await new Promise((resolve, reject) => {
             const script = document.createElement('script');
@@ -531,32 +523,27 @@ export default function ResultScreen({ route, navigation }) {
           });
         }
 
-        // 초기화 여부 확인 후 1회만 init
         const Kakao = window.Kakao;
         if (!Kakao.isInitialized()) {
           Kakao.init('5794780a6ba882582fb21d5794ae3007');
         }
 
         const inviteUrl = `${window.location.origin}/invite?code=${coupleCode}`;
+        const logoUrl   = `${window.location.origin}/icon.png`; // 유저 A 초청장 발송 로고 보정
+
         try {
           Kakao.Share.sendDefault({
             objectType: 'feed',
             content: {
               title: '💍 결혼 가치관 초청장이 도착했습니다.',
               description: '연인분이 결혼 가치관 테스트 20문항을 완료했습니다! 지금 속마음을 매칭해보세요.',
-              imageUrl: 'https://developers.kakao.com/assets/img/about/logos/kakaotalksharing/kakaotalk_sharing_btn_medium.png',
-              link: {
-                mobileWebUrl: inviteUrl,
-                webUrl: inviteUrl,
-              },
+              imageUrl: logoUrl,
+              link: { mobileWebUrl: inviteUrl, webUrl: inviteUrl },
             },
             buttons: [
               {
                 title: '테스트 참여하기',
-                link: {
-                  mobileWebUrl: inviteUrl,
-                  webUrl: inviteUrl,
-                },
+                link: { mobileWebUrl: inviteUrl, webUrl: inviteUrl },
               },
             ],
           });
@@ -569,7 +556,6 @@ export default function ResultScreen({ route, navigation }) {
       setKakaoShared(true);
       setTimeout(() => setKakaoShared(false), 3000);
     } catch (e) {
-      // 디버깅용: 정확한 에러 원인 노출
       console.error('[handleKakaoShare]', e);
       window.alert(e.message ?? '알 수 없는 오류가 발생했습니다.');
     } finally {
@@ -628,7 +614,6 @@ export default function ResultScreen({ route, navigation }) {
     finally { setSavingComp(false); }
   };
 
-  // ── UserA 렌더 ──────────────────────────────────────────────────
   if (!isUserB) return (
     <ScreenShell>
       <View style={styles.centerContainer}>
@@ -660,7 +645,6 @@ export default function ResultScreen({ route, navigation }) {
     </ScreenShell>
   );
 
-  // ── UserB 로딩/에러 ─────────────────────────────────────────────
   if (compareStatus !== 'ready') return (
     <ScreenShell>
       <View style={styles.centerContainer}>
@@ -682,7 +666,6 @@ export default function ResultScreen({ route, navigation }) {
     </ScreenShell>
   );
 
-  // ── UserB 비교 결과 ─────────────────────────────────────────────
   const { matching, different, skippedBoth = [] } = comparison;
   return (
     <ScreenShell contentStyle={styles.scrollShell}>
@@ -740,15 +723,13 @@ export default function ResultScreen({ route, navigation }) {
   );
 }
 
-// ── CoupleResultScreen 스타일 ────────────────────────────────────────
+// cs 및 styles, rp 디자인 스펙 유지 보수용 하단 스타일시트는 기존과 완전히 동일하므로 압축 유지됨.
 const cs = StyleSheet.create({
   scroll:      { paddingHorizontal: 20, paddingTop: 20, paddingBottom: 32, gap: 16 },
   center:      { flex: 1, justifyContent: 'center', alignItems: 'center' },
   emoji:       { fontSize: 52, marginBottom: 12 },
   dimText:     { fontSize: 13, color: '#9CA3AF', marginTop: 10 },
   errorText:   { fontSize: 13, color: '#EF4444' },
-
-  // 일치율 카드
   matchCard:   { backgroundColor: '#F9FAFB', borderRadius: 20, padding: 24, alignItems: 'center', borderWidth: 1, borderColor: '#E5E7EB' },
   matchLabel:  { fontSize: 13, color: '#6B7280', fontWeight: '700', marginBottom: 8, letterSpacing: 0.5 },
   matchRate:   { fontSize: 64, fontWeight: '900', lineHeight: 72 },
@@ -756,8 +737,6 @@ const cs = StyleSheet.create({
   gaugeTrack:  { width: '100%', height: 10, backgroundColor: '#E5E7EB', borderRadius: 5, overflow: 'hidden', marginBottom: 10 },
   gaugeFill:   { height: '100%', borderRadius: 5 },
   matchCount:  { fontSize: 13, color: '#6B7280' },
-
-  // 불일치 맛보기
   section:     { gap: 10 },
   sectionTitle: { fontSize: 15, fontWeight: '900', color: '#1A1A1A', marginBottom: 4 },
   spicyCard:   { backgroundColor: '#FFFBEB', borderWidth: 1.5, borderColor: '#FDE68A', borderRadius: 16, padding: 16, gap: 8 },
@@ -768,8 +747,6 @@ const cs = StyleSheet.create({
   tagB:        { backgroundColor: '#DBEAFE', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8, minWidth: 44, alignItems: 'center' },
   tagTxt:      { fontSize: 10, fontWeight: '800', color: '#4B5563' },
   choiceTxt:   { flex: 1, fontSize: 12, color: '#374151', lineHeight: 18 },
-
-  // 잠금 배너
   lockBanner:  { backgroundColor: '#141414', borderRadius: 20, padding: 24, gap: 14, borderWidth: 1.5, borderColor: '#FFD60A' },
   lockHeader:  { flexDirection: 'row', alignItems: 'center', gap: 10 },
   lockIcon:    { fontSize: 28 },
@@ -783,38 +760,25 @@ const cs = StyleSheet.create({
   payBtn:      { backgroundColor: '#FFD60A', borderRadius: 16, paddingVertical: 18, alignItems: 'center', gap: 4 },
   payBtnText:  { fontSize: 17, fontWeight: '900', color: '#141414' },
   payBtnSub:   { fontSize: 11, color: 'rgba(0,0,0,0.5)', fontWeight: '600' },
-
   ghostBtn:    { borderWidth: 1.5, borderColor: '#E5E7EB', paddingVertical: 14, borderRadius: 14, alignItems: 'center' },
   ghostBtnText: { color: '#9CA3AF', fontSize: 14, fontWeight: '600' },
-
-  // 섹션 설명
   sectionDesc: { fontSize: 12, color: '#9CA3AF', marginBottom: 8 },
-
-  // 보류 카드
   skippedCard: { backgroundColor: '#F9FAFB', borderWidth: 1.5, borderColor: '#E5E7EB', borderRadius: 16, padding: 16, gap: 4 },
-
-  // 불일치 브리지 CTA
   bridgeBox:       { backgroundColor: '#F5F3FF', borderRadius: 16, padding: 18, alignItems: 'center', gap: 12, borderWidth: 1.5, borderColor: '#DDD6FE', marginTop: 4 },
   bridgeText:      { fontSize: 14, color: '#374151', textAlign: 'center', lineHeight: 22 },
   bridgeHighlight: { fontWeight: '900', color: '#7C3AED' },
   bridgeBtn:       { backgroundColor: '#7C3AED', borderRadius: 14, paddingVertical: 14, paddingHorizontal: 24 },
   bridgeBtnText:   { color: '#FFF', fontSize: 14, fontWeight: '800' },
-
-  // 커플 성향 타이틀 카드
   titleCard:   { borderWidth: 2, borderRadius: 20, padding: 22, alignItems: 'center', gap: 8 },
   titleEmoji:  { fontSize: 44 },
   titleText:   { fontSize: 20, fontWeight: '900', textAlign: 'center' },
   titleDesc:   { fontSize: 13, color: '#6B7280', textAlign: 'center', lineHeight: 20 },
-
-  // 카테고리 진행바 카드
   catCard:     { backgroundColor: '#FAFAFA', borderRadius: 20, padding: 20, gap: 14, borderWidth: 1, borderColor: '#E5E7EB' },
   catRow:      { gap: 6 },
   catLabel:    { fontSize: 13, fontWeight: '700', color: '#374151' },
   catBarTrack: { height: 8, backgroundColor: '#E5E7EB', borderRadius: 4, overflow: 'hidden' },
   catBarFill:  { height: '100%', borderRadius: 4 },
   catPct:      { fontSize: 12, fontWeight: '800', textAlign: 'right' },
-
-  // 공유 버튼 섹션
   shareSection:  { alignItems: 'center', gap: 10 },
   shareLabel:    { fontSize: 13, color: '#6B7280', textAlign: 'center', lineHeight: 20 },
   shareBtn:      { width: '100%', backgroundColor: '#FEE500', borderRadius: 16, paddingVertical: 18, alignItems: 'center', gap: 4 },
@@ -823,7 +787,6 @@ const cs = StyleSheet.create({
   shareBtnSub:   { fontSize: 11, color: 'rgba(25,22,0,0.5)', fontWeight: '600' },
 });
 
-// ── DummyReport 스타일 ───────────────────────────────────────────────
 const rp = StyleSheet.create({
   container:    { gap: 14 },
   headerBand:   { backgroundColor: '#1A1A1A', borderRadius: 16, padding: 20, alignItems: 'center', gap: 4 },
@@ -849,7 +812,6 @@ const rp = StyleSheet.create({
   footerTxt:    { fontSize: 11, color: '#9CA3AF' },
 });
 
-// ── 기존 rooms/ 플로우 스타일 (하위 호환) ────────────────────────────
 const styles = StyleSheet.create({
   centerContainer:  { flex: 1, justifyContent: 'center', alignItems: 'center' },
   emoji:            { fontSize: 64, marginBottom: 16 },
