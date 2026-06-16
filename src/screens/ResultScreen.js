@@ -66,7 +66,6 @@ function CoupleResultScreen({ coupleCode, navigation }) {
   const [unmatched, setUnmatched]       = useState([]);
   const [skippedBoth, setSkippedBoth]   = useState([]);
   const [catCount, setCatCount]         = useState({ '돈': [0, 0], '시댁': [0, 0], '라이프': [0, 0] });
-  const [reportOpen, setReport] = useState(false);
   const [shared, setShared]     = useState(false);
 
   useEffect(() => {
@@ -134,17 +133,6 @@ function CoupleResultScreen({ coupleCode, navigation }) {
   const titleData     = coupleTitle(rate);
   const catBars       = catMatchRate(catCount);
   const spicy         = unmatched.slice(0, 3);
-
-  const handlePayment = () => {
-    push(ref(db, 'analytics_events'), {
-      event: 'click_fake_payment', coupleCode, matchRate: rate,
-      timestamp: new Date().toISOString(), platform: Platform.OS,
-    }).catch(() => {});
-    const title = '🎉 축하합니다!';
-    const msg = '현재 \'반반\' 오픈 베타 기간으로,\n본 리포트는 100% 무료로 즉시 발급됩니다!\n\n정식 출시 전까지 마음껏 이용해 보세요. 🙂';
-    Platform.OS === 'web' ? (window.alert(`${title}\n\n${msg}`), setReport(true))
-      : Alert.alert(title, msg, [{ text: '리포트 열기 🎁', onPress: () => setReport(true) }]);
-  };
 
   // 공유 완료 피드백 헬퍼
   const markShared = () => { setShared(true); setTimeout(() => setShared(false), 3000); };
@@ -290,31 +278,44 @@ function CoupleResultScreen({ coupleCode, navigation }) {
           </View>
         )}
 
-        <View style={cs.lockBanner}>
-          <View style={cs.lockHeader}>
-            <Text style={cs.lockIcon}>🔒</Text>
-            <View style={cs.dangerBadge}><Text style={cs.dangerBadgeTxt}>위험 스팟 {unmatched.length}개 발견</Text></View>
-          </View>
-          <Text style={cs.lockTitle}>
-            두 분의 데이터 정밀 진단 결과,{'\n'}
-            <Text style={{ color: '#FCA5A5' }}>결혼 후 파혼 위험 스팟 {unmatched.length}개</Text>가 발견됐습니다.
+        {/* ── 앱 다운로드 CTA ──────────────────────────────────── */}
+        <View style={cs.appCtaCard}>
+          <Text style={cs.appCtaEmoji}>📱</Text>
+          <Text style={cs.appCtaTitle}>
+            우리 부부의 소름 돋는 심층 분석 결과와{'\n'}매운맛 질문은 앱에서 무료로 확인하세요!
           </Text>
-          <Text style={cs.lockBody}>
-            AI 부부상담 전문가의{' '}
-            <Text style={cs.lockHighlight}>[우리 커플 맞춤형 갈등 방지 리포트]</Text>를 열어보세요.
-          </Text>
-          <View style={cs.includeBox}>
-            {['📊 카테고리별 갈등 위험도 그래프', '👫 선배 부부들의 현실 조언', '💬 맞춤형 소통 가이드라인'].map(item => (
-              <Text key={item} style={cs.includeItem}>✓  {item}</Text>
-            ))}
-          </View>
-          <TouchableOpacity style={cs.payBtn} onPress={handlePayment} activeOpacity={0.88}>
-            <Text style={cs.payBtnText}>3,900원에 리포트 즉시 열기</Text>
-            <Text style={cs.payBtnSub}>지금 바로 커플 맞춤 처방전 확인</Text>
-          </TouchableOpacity>
-        </View>
+          <View style={cs.appBtnRow}>
+            <TouchableOpacity
+              style={cs.appStoreBtn}
+              onPress={() => {
+                // TODO: App Store 출시 후 실제 링크로 교체
+                // Linking.openURL('https://apps.apple.com/app/id...');
+              }}
+              activeOpacity={0.82}
+            >
+              <Text style={cs.appStoreBtnIcon}>🍎</Text>
+              <View>
+                <Text style={cs.appStoreBtnSub}>Download on the</Text>
+                <Text style={cs.appStoreBtnMain}>App Store</Text>
+              </View>
+            </TouchableOpacity>
 
-        {reportOpen && <DummyReport catCount={catCount} unmatched={unmatched} rate={rate} />}
+            <TouchableOpacity
+              style={cs.appStoreBtn}
+              onPress={() => {
+                // TODO: Google Play 출시 후 실제 링크로 교체
+                // Linking.openURL('https://play.google.com/store/apps/details?id=...');
+              }}
+              activeOpacity={0.82}
+            >
+              <Text style={cs.appStoreBtnIcon}>▶</Text>
+              <View>
+                <Text style={cs.appStoreBtnSub}>Get it on</Text>
+                <Text style={cs.appStoreBtnMain}>Google Play</Text>
+              </View>
+            </TouchableOpacity>
+          </View>
+        </View>
 
         <View style={cs.shareSection}>
           <Text style={cs.shareLabel}>결과가 마음에 들었나요? 친구들에게 소문내 주세요 🙌</Text>
@@ -747,19 +748,15 @@ const cs = StyleSheet.create({
   tagB:        { backgroundColor: '#DBEAFE', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8, minWidth: 44, alignItems: 'center' },
   tagTxt:      { fontSize: 10, fontWeight: '800', color: '#4B5563' },
   choiceTxt:   { flex: 1, fontSize: 12, color: '#374151', lineHeight: 18 },
-  lockBanner:  { backgroundColor: '#141414', borderRadius: 20, padding: 24, gap: 14, borderWidth: 1.5, borderColor: '#FFD60A' },
-  lockHeader:  { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  lockIcon:    { fontSize: 28 },
-  dangerBadge: { backgroundColor: '#DC2626', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20 },
-  dangerBadgeTxt: { color: '#FFF', fontSize: 11, fontWeight: '900' },
-  lockTitle:   { fontSize: 16, fontWeight: '800', color: '#FFFFFF', lineHeight: 26 },
-  lockBody:    { fontSize: 13, color: '#9CA3AF', lineHeight: 20 },
-  lockHighlight: { color: '#FCD34D', fontWeight: '700' },
-  includeBox:  { backgroundColor: '#1F1F1F', borderRadius: 12, padding: 14, gap: 8 },
-  includeItem: { fontSize: 13, color: '#D1D5DB', lineHeight: 20 },
-  payBtn:      { backgroundColor: '#FFD60A', borderRadius: 16, paddingVertical: 18, alignItems: 'center', gap: 4 },
-  payBtnText:  { fontSize: 17, fontWeight: '900', color: '#141414' },
-  payBtnSub:   { fontSize: 11, color: 'rgba(0,0,0,0.5)', fontWeight: '600' },
+  // ── 앱 다운로드 CTA ───────────────────────────────────────────────
+  appCtaCard:      { backgroundColor: '#F9FAFB', borderRadius: 20, padding: 24, alignItems: 'center', gap: 16, borderWidth: 1, borderColor: '#E5E7EB' },
+  appCtaEmoji:     { fontSize: 36 },
+  appCtaTitle:     { fontSize: 15, fontWeight: '800', color: '#1A1A1A', textAlign: 'center', lineHeight: 24 },
+  appBtnRow:       { flexDirection: 'row', gap: 10, width: '100%' },
+  appStoreBtn:     { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: '#1A1A1A', borderRadius: 14, paddingVertical: 13, paddingHorizontal: 14, justifyContent: 'center' },
+  appStoreBtnIcon: { fontSize: 20, color: '#FFFFFF' },
+  appStoreBtnSub:  { fontSize: 9, color: 'rgba(255,255,255,0.65)', fontWeight: '600', letterSpacing: 0.3 },
+  appStoreBtnMain: { fontSize: 14, fontWeight: '900', color: '#FFFFFF' },
   ghostBtn:    { borderWidth: 1.5, borderColor: '#E5E7EB', paddingVertical: 14, borderRadius: 14, alignItems: 'center' },
   ghostBtnText: { color: '#9CA3AF', fontSize: 14, fontWeight: '600' },
   sectionDesc: { fontSize: 12, color: '#9CA3AF', marginBottom: 8 },
