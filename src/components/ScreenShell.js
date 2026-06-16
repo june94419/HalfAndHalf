@@ -62,5 +62,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingTop: 12,
     paddingBottom: 16,
+    // 웹: overflow:hidden 부모(mobileContainer)가 스크롤 이벤트를 막으므로
+    // content 레이어에 명시적 스크롤 컨테이너를 열어줌
+    ...Platform.select({ web: { overflow: 'auto' } }),
   },
 });
