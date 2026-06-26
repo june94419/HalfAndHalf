@@ -1,6 +1,6 @@
 {
   "buildCommand": "npm run build:web",
-  "outputDirectory": "dist/web",
+  "outputDirectory": "dist",
   "rewrites": [
     { "source": "/privacy.html", "destination": "/privacy.html" },
     { "source": "/terms.html",   "destination": "/terms.html"   },
