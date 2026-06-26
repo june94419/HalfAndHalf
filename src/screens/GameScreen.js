@@ -202,7 +202,7 @@ export default function GameScreen({ route, navigation }) {
       //   couples/${coupleCode}/creatorPushToken 을 읽어 Toss Smart Delivery API 로 A에게 푸시 발송.
       // 알림 문구: "연인분이 답변을 완료했어요! 두 분의 가치관 반반 리포트를 확인해보세요."
       await update(ref(db, `couples/${coupleCode}`), {
-        partnerId:        auth.currentUser?.uid ?? null,
+        partnerId:        auth.currentUser?.uid ?? 'anon',
         partnerAnswers,
         status:           'completed',
         notifyCreatorAt:  new Date().toISOString(),

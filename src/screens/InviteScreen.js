@@ -6,6 +6,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { signInAnonymously } from 'firebase/auth';
 import { ref, get } from 'firebase/database';
 import { auth, db } from '../../firebase';
+// auth import는 signInAnonymously에서만 사용 (선택적 로그인)
 import { loadQuestions, getQuestionsByIds } from '../utils/questionsDB';
 
 // App.js 의 PostLoginHandler 와 공유하는 스토리지 키
@@ -44,8 +45,8 @@ export default function InviteScreen({ route, navigation }) {
     if (!code || !coupleData || isStarting) return;
     setIsStarting(true);
     try {
-      // 페이지 리다이렉트 없이 즉시 완료되는 익명 로그인
-      await signInAnonymously(auth);
+      // 익명 로그인 시도 — 실패해도 게임 진행 (banban.io.kr 미인증 도메인 대응)
+      try { await signInAnonymously(auth); } catch {}
 
       // questionIds 배열이 있으면 A가 풀었던 순서 그대로 재현.
       // 없으면 creatorAnswers 키로 폴백 (구형 방 지원).

@@ -1,17 +1,17 @@
 {
   "rules": {
     ".read": true,
-    ".write": "auth != null",
+    ".write": true,
     "couples": {
       "$coupleCode": {
         ".read": true,
-        ".write": "auth != null"
+        ".write": true
       }
     },
     "rooms": {
       "$roomCode": {
         ".read": true,
-        ".write": "auth != null"
+        ".write": true
       }
     }
   }
