@@ -5,12 +5,13 @@ import {
   Alert, Platform,
 } from 'react-native';
 import { signInAnonymously } from 'firebase/auth';
-import { ref, push, set, get, update, serverTimestamp } from 'firebase/database';
+import { ref, push, set, get, update, onValue, serverTimestamp } from 'firebase/database';
 import * as Clipboard from 'expo-clipboard';
 import { auth, db } from '../../firebase';
-import { BALANCE_QUESTIONS } from '../data/balanceQuestions';
+import { getCachedQuestionsSync } from '../utils/questionsDB';
 import ScreenShell from '../components/ScreenShell';
 import { trackEvent } from '../utils/analytics';
+import { getTossShareLink, share } from '@apps-in-toss/web-framework';
 
 const CATEGORY_LABEL = { '돈': '돈 & 재테크', '시댁': '서로의 가족', '라이프': '라이프스타일' };
 const getChoiceText = (q, c) => c === 'A' ? q.questionA : c === 'B' ? q.questionB : '보류';
@@ -60,71 +61,173 @@ const riskLevel = (unmatched, total) => {
   return { label: '낮음', color: '#16A34A', pct: 20 };
 };
 
+// ── Stage 1: A 게임 완료 → 연인 초대 대기 화면 ─────────────────────────
+// coupleCode는 GameScreen에서 이미 생성됨. 공유 버튼만 누르면 됨.
+// onValue 리스너: B 완료 시 자동으로 CoupleResultScreen으로 전환.
+function CreatorInviteScreen({ coupleCode, category, navigation }) {
+  useEffect(() => {
+    const unsubscribe = onValue(ref(db, `couples/${coupleCode}`), (snap) => {
+      if (!snap.exists()) return;
+      if (snap.val()?.status === 'completed') {
+        unsubscribe();
+        // B 완료 → A도 동일한 "결과 확인하기" 화면으로 이동
+        navigation.replace('Result', { coupleCode, isPartner: true });
+      }
+    });
+    return () => unsubscribe();
+  }, [coupleCode]);
+
+  const handleShare = async () => {
+    // 토스 인앱 여부와 무관하게 항상 유효한 웹 초대 URL 구성
+    const webInviteUrl =
+      (typeof window !== 'undefined' ? window.location.origin : 'https://half-and-half-nine.vercel.app')
+      + `?code=${coupleCode}`;
+
+    let shareLink = webInviteUrl;
+    try {
+      const result = await Promise.race([
+        getTossShareLink(`intoss://halfandhalf?code=${coupleCode}`),
+        new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 1500)),
+      ]);
+      if (result) shareLink = result;
+    } catch {}
+
+    try {
+      // 1차 시도: 토스 SDK share (인앱 환경)
+      await share({
+        message: `[반반] 연인도 같이 밸런스 게임 해보기 💕 아래 링크를 눌러 토스 앱에서 바로 시작해봐!\n\n참여하기: ${shareLink}`,
+      });
+      trackEvent('invite_share_clicked', { couple_code: coupleCode });
+    } catch {
+      // 2차 폴백: 토스 SDK 미제공 환경(로컬/일반 브라우저) → 클립보드 복사 + alert
+      try {
+        if (navigator?.clipboard?.writeText) {
+          await navigator.clipboard.writeText(webInviteUrl);
+        } else {
+          await Clipboard.setStringAsync(webInviteUrl);
+        }
+      } catch {}
+      alert('초대 링크가 복사되었습니다! 연인에게 공유해보세요.');
+      trackEvent('invite_share_fallback', { couple_code: coupleCode });
+    }
+  };
+
+  return (
+    <ScreenShell>
+      <View style={styles.centerContainer}>
+        <Text style={styles.emoji}>🎉</Text>
+        <Text style={styles.title}>모든 질문 완료!</Text>
+        <Text style={styles.subtitle}>
+          {CATEGORY_LABEL[category] || category} 카테고리의{'\n'}모든 밸런스 게임을 마쳤어요.
+        </Text>
+        <TouchableOpacity style={styles.notifyShareBtn} onPress={handleShare} activeOpacity={0.88}>
+          <Text style={styles.notifyShareBtnText}>💬 연인도 같이 밸런스 게임 해보기</Text>
+          <Text style={styles.notifyShareBtnSub}>카카오톡·문자 등으로 바로 공유돼요</Text>
+        </TouchableOpacity>
+        <View style={styles.waitingBadge}>
+          <ActivityIndicator size="small" color="#6B7280" />
+          <Text style={styles.waitingText}>연인이 답변을 완료하면 자동으로 결과가 열려요</Text>
+        </View>
+        <TouchableOpacity style={styles.ghostBtn} onPress={() => navigation.navigate('Lobby')}>
+          <Text style={styles.ghostBtnText}>홈으로 돌아가기</Text>
+        </TouchableOpacity>
+      </View>
+    </ScreenShell>
+  );
+}
+
+// ── Stage 3: 두 사람 모두 완료 → 결과 진입 중간 화면 ──────────────────────
+// B 제출 직후 & A가 푸시/링크 재진입 시 공통으로 마주하는 화면.
+// 여기서 "결과 확인하기"를 누르면 비로소 CoupleResultScreen으로 이동.
+function PartnerCompleteScreen({ coupleCode, navigation }) {
+  return (
+    <ScreenShell>
+      <View style={styles.centerContainer}>
+        <Text style={styles.emoji}>🎉</Text>
+        <Text style={styles.title}>밸런스 게임 완료!</Text>
+        <Text style={styles.subtitle}>
+          두 분 모두 답변을 마쳤어요.{'\n'}이제 가치관 비교 결과를 확인해보세요!
+        </Text>
+        <TouchableOpacity
+          style={styles.primaryBtn}
+          onPress={() => navigation.replace('Result', { coupleCode })}
+          activeOpacity={0.88}
+        >
+          <Text style={styles.primaryBtnText}>🔍 밸런스 게임 결과 확인하기</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.ghostBtn, { marginTop: 12 }]}
+          onPress={() => navigation.navigate('Lobby')}
+        >
+          <Text style={styles.ghostBtnText}>홈으로 돌아가기</Text>
+        </TouchableOpacity>
+      </View>
+    </ScreenShell>
+  );
+}
+
+// ── Stage 4+5: 두 사람 모두 완료 → 비교 결과 ──────────────────────────
 function CoupleResultScreen({ coupleCode, navigation }) {
   const [status, setStatus]             = useState('loading');
   const [matchCount, setMatch]          = useState(0);
   const [unmatched, setUnmatched]       = useState([]);
   const [skippedBoth, setSkippedBoth]   = useState([]);
   const [catCount, setCatCount]         = useState({ '돈': [0, 0], '시댁': [0, 0], '라이프': [0, 0] });
-  const [shared, setShared]     = useState(false);
+  const [shared, setShared]           = useState(false);
+  const [waitingPartner, setWaiting]  = useState(false);
+
+  const buildResult = (snap) => {
+    const { creatorAnswers, partnerAnswers } = snap.val();
+    if (!creatorAnswers || !partnerAnswers) return false;
+
+    let matched = 0;
+    const unmatchedList = [];
+    const skippedBothList = [];
+    const cc = { '돈': [0, 0], '시댁': [0, 0], '라이프': [0, 0] };
+
+    const allQ = getCachedQuestionsSync();
+    Object.keys(creatorAnswers).forEach(idStr => {
+      const q = allQ.find(q => q.id === Number(idStr));
+      if (!q) return;
+      const cA = creatorAnswers[idStr];
+      const cB = partnerAnswers[idStr];
+      if (cA === 'skipped' && cB === 'skipped') {
+        skippedBothList.push({ q });
+        return;
+      }
+      const type = q.type;
+      if (cc[type]) cc[type][0]++;
+      if (cA === cB) {
+        matched++;
+      } else {
+        if (cc[type]) cc[type][1]++;
+        unmatchedList.push({ q, creatorChoice: cA, partnerChoice: cB ?? '?' });
+      }
+    });
+
+    setMatch(matched);
+    setUnmatched(unmatchedList);
+    setSkippedBoth(skippedBothList);
+    setCatCount(cc);
+    setStatus('ready');
+    trackEvent('partner_result_viewed', {
+      couple_code: coupleCode,
+      match_rate: Math.round((matched / 20) * 100),
+      unmatched_count: unmatchedList.length,
+    });
+    return true;
+  };
 
   useEffect(() => {
-    // ── Kakao SDK 선행 초기화 ──────────────────────────────────────────
-    // SDK는 public/index.html <script> 태그로 이미 동기 로드됨.
-    // 카카오 JavaScript 앱 키: 5794780a6ba882582fb21d5794ae3007
-    // init을 useEffect(마운트 시)에서 처리해야 버튼 클릭 시 동기 호출이
-    // iOS WebKit 유저 제스처 맥락으로 인정되어 딥링크가 바로 열림.
-    if (Platform.OS === 'web' && typeof window !== 'undefined') {
-      const K = window.Kakao;
-      if (K && !K.isInitialized()) K.init('5794780a6ba882582fb21d5794ae3007');
-    }
-
-    (async () => {
-      try {
-        const snap = await get(ref(db, `couples/${coupleCode}`));
-        if (!snap.exists()) { setStatus('error'); return; }
-        const { creatorAnswers, partnerAnswers } = snap.val();
-        if (!creatorAnswers || !partnerAnswers) { setStatus('error'); return; }
-
-        let matched = 0;
-        const unmatchedList = [];
-        const skippedBothList = [];
-        const cc = { '돈': [0, 0], '시댁': [0, 0], '라이프': [0, 0] };
-
-        Object.keys(creatorAnswers).forEach(idStr => {
-          const q = BALANCE_QUESTIONS.find(q => q.id === Number(idStr));
-          if (!q) return;
-          const cA = creatorAnswers[idStr];
-          const cB = partnerAnswers[idStr];
-          if (cA === 'skipped' && cB === 'skipped') {
-            skippedBothList.push({ q });
-            return;
-          }
-          const type = q.type;
-          if (cc[type]) cc[type][0]++;
-          if (cA === cB) {
-            matched++;
-          } else {
-            if (cc[type]) cc[type][1]++;
-            unmatchedList.push({ q, creatorChoice: cA, partnerChoice: cB ?? '?' });
-          }
-        });
-
-        setMatch(matched);
-        setUnmatched(unmatchedList);
-        setSkippedBoth(skippedBothList);
-        setCatCount(cc);
-        setStatus('ready');
-        trackEvent('partner_result_viewed', {
-          couple_code: coupleCode,
-          match_rate: Math.round((matched / 20) * 100),
-          unmatched_count: unmatchedList.length,
-        });
-      } catch (e) {
-        console.error('[CoupleResult]', e);
-        setStatus('error');
-      }
-    })();
+    const unsubscribe = onValue(ref(db, `couples/${coupleCode}`), (snap) => {
+      if (!snap.exists()) { setStatus('error'); return; }
+      const ok = buildResult(snap);
+      if (!ok) setWaiting(true);
+    }, (e) => {
+      console.error('[CoupleResult]', e);
+      setStatus('error');
+    });
+    return () => unsubscribe();
   }, [coupleCode]);
 
   const answeredTotal = matchCount + unmatched.length;
@@ -134,63 +237,34 @@ function CoupleResultScreen({ coupleCode, navigation }) {
   const catBars       = catMatchRate(catCount);
   const spicy         = unmatched.slice(0, 3);
 
-  // 공유 완료 피드백 헬퍼
   const markShared = () => { setShared(true); setTimeout(() => setShared(false), 3000); };
 
-  const handleShare = () => {
-    const base = typeof window !== 'undefined' ? window.location.origin : 'https://half-and-half-nine.vercel.app';
-    const shareUrl = base;
+  const handleShare = async () => {
     trackEvent('result_share_clicked', { couple_code: coupleCode, match_rate: rate });
-
-    if (Platform.OS === 'web' && typeof window !== 'undefined') {
-
-      // ── 1순위: iOS·Android 네이티브 공유 시트 ─────────────────────────
-      // navigator.share → OS 공유 패널이 즉시 열려 카카오톡 아이콘을
-      // 바로 탭할 수 있음. 중간 웹 페이지 없이 앱 직접 런칭.
-      if (typeof navigator !== 'undefined' && navigator.share) {
-        navigator.share({
-          title: `${titleData.emoji} 반반 가치관 일치율 ${rate}%!`,
-          text: `${titleData.emoji} 우리 커플 가치관 일치율 ${rate}%나 됐어!\n${titleData.title} — 너도 연인이랑 해봐 👇`,
-          url: shareUrl,
-        })
-          .then(markShared)
-          .catch(() => {}); // 사용자 취소는 무시
-        return;
-      }
-
-      // ── 2순위: 카카오 SDK sendDefault (데스크톱) ──────────────────────
-      // 카카오 JavaScript 앱 키: 5794780a6ba882582fb21d5794ae3007
-      // init은 마운트 시 완료되어 있으므로 여기서 async 없이 동기 호출.
-      const Kakao = window.Kakao;
-      if (Kakao && Kakao.isInitialized()) {
-        try {
-          Kakao.Share.sendDefault({
-            objectType: 'feed',
-            content: {
-              title: `${titleData.emoji} 우리 커플 가치관 일치율 ${rate}%나 됐어!`,
-              description: `${titleData.title} — 너도 연인이랑 해봐 👇`,
-              imageUrl: `${base}/og-image.png`,
-              link: { mobileWebUrl: shareUrl, webUrl: shareUrl },
-            },
-            buttons: [{ title: '나도 해보기', link: { mobileWebUrl: shareUrl, webUrl: shareUrl } }],
-          });
-          markShared();
-          return;
-        } catch (e) {
-          console.warn('[Kakao] share error:', e);
-        }
-      }
-    }
-
-    // ── 3순위: 클립보드 복사 폴백 ─────────────────────────────────────
-    Clipboard.setStringAsync(shareUrl).then(markShared).catch(() => {});
+    const deepLink = 'intoss://halfandhalf';
+    await Clipboard.setStringAsync(deepLink).catch(() => {});
+    markShared();
   };
+
 
   if (status === 'loading') return (
     <ScreenShell>
       <View style={cs.center}>
         <ActivityIndicator size="large" color="#1A1A1A" />
         <Text style={cs.dimText}>결과 분석 중...</Text>
+      </View>
+    </ScreenShell>
+  );
+
+  if (waitingPartner && status !== 'ready') return (
+    <ScreenShell>
+      <View style={cs.center}>
+        <Text style={cs.emoji}>💌</Text>
+        <Text style={cs.errorText}>연인이 답변 중이에요!</Text>
+        <Text style={[cs.errorText, { fontSize: 13, color: '#6B7280', marginTop: 8 }]}>
+          완료되면 이 화면이 자동으로 바뀌어요
+        </Text>
+        <ActivityIndicator size="small" color="#FFD60A" style={{ marginTop: 20 }} />
       </View>
     </ScreenShell>
   );
@@ -278,36 +352,20 @@ function CoupleResultScreen({ coupleCode, navigation }) {
           </View>
         )}
 
-        {/* ── 앱 다운로드 CTA ──────────────────────────────────── */}
         <View style={cs.appCtaCard}>
           <Text style={cs.appCtaEmoji}>📱</Text>
           <Text style={cs.appCtaTitle}>
             우리 부부의 소름 돋는 심층 분석 결과와{'\n'}매운맛 질문은 앱에서 무료로 확인하세요!
           </Text>
           <View style={cs.appBtnRow}>
-            <TouchableOpacity
-              style={cs.appStoreBtn}
-              onPress={() => {
-                // TODO: App Store 출시 후 실제 링크로 교체
-                // Linking.openURL('https://apps.apple.com/app/id...');
-              }}
-              activeOpacity={0.82}
-            >
+            <TouchableOpacity style={cs.appStoreBtn} activeOpacity={0.82}>
               <Text style={cs.appStoreBtnIcon}>🍎</Text>
               <View>
                 <Text style={cs.appStoreBtnSub}>Download on the</Text>
                 <Text style={cs.appStoreBtnMain}>App Store</Text>
               </View>
             </TouchableOpacity>
-
-            <TouchableOpacity
-              style={cs.appStoreBtn}
-              onPress={() => {
-                // TODO: Google Play 출시 후 실제 링크로 교체
-                // Linking.openURL('https://play.google.com/store/apps/details?id=...');
-              }}
-              activeOpacity={0.82}
-            >
+            <TouchableOpacity style={cs.appStoreBtn} activeOpacity={0.82}>
               <Text style={cs.appStoreBtnIcon}>▶</Text>
               <View>
                 <Text style={cs.appStoreBtnSub}>Get it on</Text>
@@ -319,15 +377,9 @@ function CoupleResultScreen({ coupleCode, navigation }) {
 
         <View style={cs.shareSection}>
           <Text style={cs.shareLabel}>결과가 마음에 들었나요? 친구들에게 소문내 주세요 🙌</Text>
-          <TouchableOpacity
-            style={[cs.shareBtn, shared && cs.shareBtnDone]}
-            onPress={handleShare}
-            activeOpacity={0.88}
-          >
-            <Text style={cs.shareBtnText}>
-              {shared ? '✅ 공유 완료!' : '💬 카카오톡으로 공유하기'}
-            </Text>
-            {!shared && <Text style={cs.shareBtnSub}>링크가 없으면 자동으로 클립보드에 복사돼요</Text>}
+          <TouchableOpacity style={[cs.shareBtn, shared && cs.shareBtnDone]} onPress={handleShare} activeOpacity={0.88}>
+            <Text style={cs.shareBtnText}>{shared ? '✅ 링크가 복사됐어요!' : '📋 초대 링크 복사하기'}</Text>
+            {!shared && <Text style={cs.shareBtnSub}>링크를 복사해서 친구에게 보내세요</Text>}
           </TouchableOpacity>
         </View>
 
@@ -423,27 +475,24 @@ function DummyReport({ catCount, unmatched, rate }) {
   );
 }
 
-export default function ResultScreen({ route, navigation }) {
-  const { coupleCode, category: passedCategory, history, roomId } = route.params;
-
-  if (coupleCode) {
-    return <CoupleResultScreen coupleCode={coupleCode} navigation={navigation} />;
-  }
-
+// ── 레거시 룸 시스템 (rooms/ 경로, 구형 플로우) ──────────────────────────
+function LegacyRoomScreen({ route, navigation }) {
+  const { category: passedCategory, history, roomId } = route.params;
   const isUserB = !!roomId;
 
   const [createdRoomId, setCreatedRoomId] = useState(null);
   const [roomStatus, setRoomStatus]       = useState('creating');
-  const [copied, setCopied]               = useState(false);
-  const [kakaoSharing, setKakaoSharing]   = useState(false);
-  const [kakaoShared, setKakaoShared]     = useState(false);
+  const [tossSharing, setTossSharing]     = useState(false);
+  const [tossShared, setTossShared]       = useState(false);
   const [compareStatus, setCompareStatus] = useState('saving');
   const [comparison, setComparison]       = useState(null);
   const [compromises, setCompromises]     = useState({});
   const [savingCompromise, setSavingComp] = useState(false);
   const [compromiseSaved, setCompSaved]   = useState(false);
 
-  useEffect(() => { isUserB ? setupUserB() : createRoom(); }, []);
+  useEffect(() => {
+    if (isUserB) { setupUserB(); } else { createRoom(); }
+  }, []);
 
   const goHome = () => {
     if (typeof window !== 'undefined' && window.history) {
@@ -472,95 +521,16 @@ export default function ResultScreen({ route, navigation }) {
     }
   };
 
-  const handleShare = async () => {
-    trackEvent('kakao_share_clicked', { type: 'room_link' });
-    const base     = typeof window !== 'undefined' ? window.location.origin : 'https://half-and-half-nine.vercel.app';
-    const shareUrl = `${base}?room=${createdRoomId}`;
-    const logoUrl  = `${base}/icon.png`; // 유저 A 링크 복사 플로우 로고 보정
-    await Clipboard.setStringAsync(shareUrl);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2500);
-    if (Platform.OS === 'web' && typeof window !== 'undefined') {
-      const Kakao = window.Kakao;
-      if (Kakao) {
-        if (!Kakao.isInitialized()) Kakao.init('5794780a6ba882582fb21d5794ae3007');
-        Kakao.Share.sendDefault({
-          objectType: 'feed',
-          content: {
-            title: '🤔 우리 연애 가치관은 몇 %나 맞을까?',
-            description: '연인이 푸드·데이트·재무 취향 20문제를 풀고 기다리고 있어요. 지금 들어와서 조율해 보세요! 💕',
-            imageUrl: logoUrl,
-            link: { mobileWebUrl: shareUrl, webUrl: shareUrl },
-          },
-          buttons: [{ title: '가치관 조율하러 가기', link: { mobileWebUrl: shareUrl, webUrl: shareUrl } }],
-        });
-      }
-    }
-  };
-
-  const handleKakaoShare = async () => {
-    if (kakaoSharing) return;
-    setKakaoSharing(true);
+  const handleTossShare = async () => {
+    if (tossSharing) return;
+    setTossSharing(true);
     try {
-      const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
-      let coupleCode = 'ROOM_';
-      for (let i = 0; i < 6; i++) coupleCode += chars[Math.floor(Math.random() * 26)];
-      const { user } = await signInAnonymously(auth);
-      const creatorAnswers = history.reduce((acc, { questionId, choice }) => { acc[questionId] = choice; return acc; }, {});
-      await set(ref(db, `couples/${coupleCode}`), {
-        creatorId: user.uid, creatorAnswers,
-        status: 'progress', createdAt: new Date().toISOString(), fakePaid: false,
-      });
-
-      if (Platform.OS === 'web' && typeof window !== 'undefined') {
-        if (!window.Kakao) {
-          await new Promise((resolve, reject) => {
-            const script = document.createElement('script');
-            script.src = 'https://t1.kakaocdn.net/kakao_js_sdk/2.7.2/kakao.min.js';
-            script.crossOrigin = 'anonymous';
-            script.onload  = resolve;
-            script.onerror = () => reject(new Error('Kakao SDK 스크립트 로드에 실패했습니다.'));
-            document.head.appendChild(script);
-          });
-        }
-
-        const Kakao = window.Kakao;
-        if (!Kakao.isInitialized()) {
-          Kakao.init('5794780a6ba882582fb21d5794ae3007');
-        }
-
-        const inviteUrl = `${window.location.origin}/invite?code=${coupleCode}`;
-        const logoUrl   = `${window.location.origin}/icon.png`; // 유저 A 초청장 발송 로고 보정
-
-        try {
-          Kakao.Share.sendDefault({
-            objectType: 'feed',
-            content: {
-              title: '💍 결혼 가치관 초청장이 도착했습니다.',
-              description: '연인분이 결혼 가치관 테스트 20문항을 완료했습니다! 지금 속마음을 매칭해보세요.',
-              imageUrl: logoUrl,
-              link: { mobileWebUrl: inviteUrl, webUrl: inviteUrl },
-            },
-            buttons: [
-              {
-                title: '테스트 참여하기',
-                link: { mobileWebUrl: inviteUrl, webUrl: inviteUrl },
-              },
-            ],
-          });
-        } catch (error) {
-          console.error('Kakao Share Error:', error);
-          alert('공유 실패 원인: ' + (error.message || error.toString()));
-        }
-      }
-
-      setKakaoShared(true);
-      setTimeout(() => setKakaoShared(false), 3000);
-    } catch (e) {
-      console.error('[handleKakaoShare]', e);
-      window.alert(e.message ?? '알 수 없는 오류가 발생했습니다.');
-    } finally {
-      setKakaoSharing(false);
+      if (!createdRoomId) return;
+      await Clipboard.setStringAsync(`intoss://halfandhalf?room=${createdRoomId}`).catch(() => {});
+      setTossShared(true);
+      setTimeout(() => setTossShared(false), 3000);
+    } catch {} finally {
+      setTossSharing(false);
     }
   };
 
@@ -581,15 +551,13 @@ export default function ResultScreen({ route, navigation }) {
 
   const buildComparison = ({ answersA, answersB, category, compromises: saved }) => {
     const matching = [], different = [], skippedBoth = [];
+    const allQ = getCachedQuestionsSync();
     Object.keys(answersA).forEach(idStr => {
-      const question = BALANCE_QUESTIONS.find(q => q.id === Number(idStr));
+      const question = allQ.find(q => q.id === Number(idStr));
       if (!question) return;
       const choiceA = answersA[idStr];
       const choiceB = answersB?.[idStr];
-      if (choiceA === 'skipped' && choiceB === 'skipped') {
-        skippedBoth.push({ question });
-        return;
-      }
+      if (choiceA === 'skipped' && choiceB === 'skipped') { skippedBoth.push({ question }); return; }
       (choiceA === choiceB ? matching : different).push(
         choiceA === choiceB
           ? { question, choice: choiceA }
@@ -622,23 +590,14 @@ export default function ResultScreen({ route, navigation }) {
         <Text style={styles.title}>모든 질문 완료!</Text>
         <Text style={styles.subtitle}>{CATEGORY_LABEL[passedCategory] || passedCategory} 카테고리의{'\n'}모든 밸런스 게임을 마쳤어요.</Text>
         <View style={styles.shareSection}>
-          {roomStatus === 'creating' && <Text style={styles.dimText}>공유 링크 생성 중...</Text>}
-          {roomStatus === 'error'    && <Text style={styles.errorText}>링크 생성에 실패했습니다.</Text>}
+          {roomStatus === 'error' && <Text style={styles.errorText}>링크 생성에 실패했습니다.</Text>}
           {roomStatus === 'done' && createdRoomId && (
-            <>
-              <TouchableOpacity style={[styles.kakaoBtn, kakaoShared && styles.primaryBtnGreen]} onPress={handleKakaoShare} disabled={kakaoSharing}>
-                <Text style={styles.kakaoBtnText}>{kakaoShared ? '✅ 초청장을 보냈어요!' : kakaoSharing ? '전송 중...' : '💬 카톡으로 공유하기'}</Text>
-                {!kakaoShared && !kakaoSharing && <Text style={styles.kakaoBtnSub}>연인에게 결혼 가치관 초청장 발송</Text>}
-              </TouchableOpacity>
-              <TouchableOpacity style={[styles.primaryBtn, copied && styles.primaryBtnGreen, { marginTop: 10 }]} onPress={handleShare}>
-                <Text style={styles.primaryBtnText}>{copied ? '✅ 링크가 복사됐어요!' : '🔗 링크 복사하기'}</Text>
-              </TouchableOpacity>
-            </>
+            <TouchableOpacity style={[styles.tossShareBtn, tossShared && styles.primaryBtnGreen]} onPress={handleTossShare} disabled={tossSharing}>
+              <Text style={styles.tossShareBtnText}>{tossShared ? '✅ 링크가 복사됐어요!' : tossSharing ? '복사 중...' : '📋 초대 링크 복사하기'}</Text>
+              {!tossShared && !tossSharing && <Text style={styles.tossShareBtnSub}>링크를 복사해서 연인에게 보내세요</Text>}
+            </TouchableOpacity>
           )}
         </View>
-        <TouchableOpacity style={styles.archiveBtn} onPress={handleArchivePress}>
-          <Text style={styles.archiveBtnText}>🔒 우리만의 가치관 백서 확인하기</Text>
-        </TouchableOpacity>
         <TouchableOpacity style={styles.ghostBtn} onPress={goHome}>
           <Text style={styles.ghostBtnText}>홈으로 돌아가기</Text>
         </TouchableOpacity>
@@ -724,7 +683,24 @@ export default function ResultScreen({ route, navigation }) {
   );
 }
 
-// cs 및 styles, rp 디자인 스펙 유지 보수용 하단 스타일시트는 기존과 완전히 동일하므로 압축 유지됨.
+// ── 라우터: isCreator+coupleCode → CreatorInviteScreen   (A: B 대기 화면)
+//            isPartner+coupleCode → PartnerCompleteScreen (양쪽: 결과 진입 중간 화면)
+//            coupleCode만          → CoupleResultScreen    (실제 성향 분석 리포트)
+//            roomId (레거시)       → LegacyRoomScreen
+export default function ResultScreen({ route, navigation }) {
+  const { coupleCode, isCreator, isPartner, category, history, roomId } = route.params ?? {};
+  if (isCreator && coupleCode) {
+    return <CreatorInviteScreen coupleCode={coupleCode} category={category} navigation={navigation} />;
+  }
+  if (isPartner && coupleCode) {
+    return <PartnerCompleteScreen coupleCode={coupleCode} navigation={navigation} />;
+  }
+  if (coupleCode) {
+    return <CoupleResultScreen coupleCode={coupleCode} navigation={navigation} />;
+  }
+  return <LegacyRoomScreen route={route} navigation={navigation} />;
+}
+
 const cs = StyleSheet.create({
   scroll:      { paddingHorizontal: 20, paddingTop: 20, paddingBottom: 32, gap: 16 },
   center:      { flex: 1, justifyContent: 'center', alignItems: 'center' },
@@ -734,24 +710,23 @@ const cs = StyleSheet.create({
   matchCard:   { backgroundColor: '#F9FAFB', borderRadius: 20, padding: 24, alignItems: 'center', borderWidth: 1, borderColor: '#E5E7EB' },
   matchLabel:  { fontSize: 13, color: '#6B7280', fontWeight: '700', marginBottom: 8, letterSpacing: 0.5 },
   matchRate:   { fontSize: 64, fontWeight: '900', lineHeight: 72 },
-  matchSub:    { fontSize: 14, color: '#374151', fontWeight: '700', marginTop: 4, marginBottom: 16, textAlign: 'center' },
+  matchSub:    { fontSize: 14, color: '#374151', fontWeight: '700', marginTop: 4, marginBottom: 16, textAlign: 'center', wordBreak: 'keep-all', overflowWrap: 'break-word' },
   gaugeTrack:  { width: '100%', height: 10, backgroundColor: '#E5E7EB', borderRadius: 5, overflow: 'hidden', marginBottom: 10 },
   gaugeFill:   { height: '100%', borderRadius: 5 },
-  matchCount:  { fontSize: 13, color: '#6B7280' },
+  matchCount:  { fontSize: 13, color: '#6B7280', wordBreak: 'keep-all', overflowWrap: 'break-word' },
   section:     { gap: 10 },
   sectionTitle: { fontSize: 15, fontWeight: '900', color: '#1A1A1A', marginBottom: 4 },
   spicyCard:   { backgroundColor: '#FFFBEB', borderWidth: 1.5, borderColor: '#FDE68A', borderRadius: 16, padding: 16, gap: 8 },
   spicyTag:    { fontSize: 11, color: '#92400E', fontWeight: '700' },
-  spicyCriteria: { fontSize: 13, fontWeight: '700', color: '#374151', lineHeight: 20 },
+  spicyCriteria: { fontSize: 13, fontWeight: '700', color: '#374151', lineHeight: 20, wordBreak: 'keep-all', overflowWrap: 'break-word' },
   choiceRow:   { flexDirection: 'row', alignItems: 'flex-start', gap: 8 },
   tagA:        { backgroundColor: '#FEE2E2', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8, minWidth: 44, alignItems: 'center' },
   tagB:        { backgroundColor: '#DBEAFE', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8, minWidth: 44, alignItems: 'center' },
   tagTxt:      { fontSize: 10, fontWeight: '800', color: '#4B5563' },
-  choiceTxt:   { flex: 1, fontSize: 12, color: '#374151', lineHeight: 18 },
-  // ── 앱 다운로드 CTA ───────────────────────────────────────────────
+  choiceTxt:   { flex: 1, fontSize: 12, color: '#374151', lineHeight: 18, wordBreak: 'keep-all', overflowWrap: 'break-word' },
   appCtaCard:      { backgroundColor: '#F9FAFB', borderRadius: 20, padding: 24, alignItems: 'center', gap: 16, borderWidth: 1, borderColor: '#E5E7EB' },
   appCtaEmoji:     { fontSize: 36 },
-  appCtaTitle:     { fontSize: 15, fontWeight: '800', color: '#1A1A1A', textAlign: 'center', lineHeight: 24 },
+  appCtaTitle:     { fontSize: 15, fontWeight: '800', color: '#1A1A1A', textAlign: 'center', lineHeight: 24, wordBreak: 'keep-all', overflowWrap: 'break-word' },
   appBtnRow:       { flexDirection: 'row', gap: 10, width: '100%' },
   appStoreBtn:     { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: '#1A1A1A', borderRadius: 14, paddingVertical: 13, paddingHorizontal: 14, justifyContent: 'center' },
   appStoreBtnIcon: { fontSize: 20, color: '#FFFFFF' },
@@ -759,17 +734,12 @@ const cs = StyleSheet.create({
   appStoreBtnMain: { fontSize: 14, fontWeight: '900', color: '#FFFFFF' },
   ghostBtn:    { borderWidth: 1.5, borderColor: '#E5E7EB', paddingVertical: 14, borderRadius: 14, alignItems: 'center' },
   ghostBtnText: { color: '#9CA3AF', fontSize: 14, fontWeight: '600' },
-  sectionDesc: { fontSize: 12, color: '#9CA3AF', marginBottom: 8 },
+  sectionDesc: { fontSize: 12, color: '#9CA3AF', marginBottom: 8, wordBreak: 'keep-all', overflowWrap: 'break-word' },
   skippedCard: { backgroundColor: '#F9FAFB', borderWidth: 1.5, borderColor: '#E5E7EB', borderRadius: 16, padding: 16, gap: 4 },
-  bridgeBox:       { backgroundColor: '#F5F3FF', borderRadius: 16, padding: 18, alignItems: 'center', gap: 12, borderWidth: 1.5, borderColor: '#DDD6FE', marginTop: 4 },
-  bridgeText:      { fontSize: 14, color: '#374151', textAlign: 'center', lineHeight: 22 },
-  bridgeHighlight: { fontWeight: '900', color: '#7C3AED' },
-  bridgeBtn:       { backgroundColor: '#7C3AED', borderRadius: 14, paddingVertical: 14, paddingHorizontal: 24 },
-  bridgeBtnText:   { color: '#FFF', fontSize: 14, fontWeight: '800' },
   titleCard:   { borderWidth: 2, borderRadius: 20, padding: 22, alignItems: 'center', gap: 8 },
   titleEmoji:  { fontSize: 44 },
   titleText:   { fontSize: 20, fontWeight: '900', textAlign: 'center' },
-  titleDesc:   { fontSize: 13, color: '#6B7280', textAlign: 'center', lineHeight: 20 },
+  titleDesc:   { fontSize: 13, color: '#6B7280', textAlign: 'center', lineHeight: 20, wordBreak: 'keep-all', overflowWrap: 'break-word' },
   catCard:     { backgroundColor: '#FAFAFA', borderRadius: 20, padding: 20, gap: 14, borderWidth: 1, borderColor: '#E5E7EB' },
   catRow:      { gap: 6 },
   catLabel:    { fontSize: 13, fontWeight: '700', color: '#374151' },
@@ -777,11 +747,28 @@ const cs = StyleSheet.create({
   catBarFill:  { height: '100%', borderRadius: 4 },
   catPct:      { fontSize: 12, fontWeight: '800', textAlign: 'right' },
   shareSection:  { alignItems: 'center', gap: 10 },
-  shareLabel:    { fontSize: 13, color: '#6B7280', textAlign: 'center', lineHeight: 20 },
-  shareBtn:      { width: '100%', backgroundColor: '#FEE500', borderRadius: 16, paddingVertical: 18, alignItems: 'center', gap: 4 },
+  shareLabel:    { fontSize: 13, color: '#6B7280', textAlign: 'center', lineHeight: 20, wordBreak: 'keep-all', overflowWrap: 'break-word' },
+  shareBtn:      { width: '100%', backgroundColor: '#1A1A1A', borderRadius: 16, paddingVertical: 18, alignItems: 'center', gap: 4 },
   shareBtnDone:  { backgroundColor: '#16A34A' },
-  shareBtnText:  { fontSize: 16, fontWeight: '900', color: '#191600' },
-  shareBtnSub:   { fontSize: 11, color: 'rgba(25,22,0,0.5)', fontWeight: '600' },
+  shareBtnText:  { fontSize: 16, fontWeight: '900', color: '#FFFFFF' },
+  shareBtnSub:   { fontSize: 11, color: 'rgba(255,255,255,0.6)', fontWeight: '600' },
+  notifySection:  { alignItems: 'center', gap: 10, marginBottom: 8 },
+  notifyLabel:    { fontSize: 13, color: '#6B7280', textAlign: 'center', lineHeight: 20, wordBreak: 'keep-all', overflowWrap: 'break-word' },
+  notifyBtn:      {
+    width: '100%',
+    backgroundColor: '#0064FF',
+    borderRadius: 16,
+    paddingVertical: 18,
+    alignItems: 'center',
+    gap: 4,
+    shadowColor: '#0064FF',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 12,
+    elevation: 6,
+  },
+  notifyBtnText:  { fontSize: 16, fontWeight: '900', color: '#FFFFFF' },
+  notifyBtnSub:   { fontSize: 11, color: 'rgba(255,255,255,0.7)', fontWeight: '600' },
 });
 
 const rp = StyleSheet.create({
@@ -791,7 +778,7 @@ const rp = StyleSheet.create({
   headerSub:    { fontSize: 12, color: '#888' },
   card:         { backgroundColor: '#F9FAFB', borderRadius: 16, padding: 18, gap: 12, borderWidth: 1, borderColor: '#E5E7EB' },
   cardTitle:    { fontSize: 14, fontWeight: '900', color: '#1A1A1A' },
-  cardBody:     { fontSize: 13, color: '#374151', lineHeight: 22 },
+  cardBody:     { fontSize: 13, color: '#374151', lineHeight: 22, wordBreak: 'keep-all', overflowWrap: 'break-word' },
   gaugeRow:     { gap: 6 },
   gaugeLabel:   { fontSize: 13, fontWeight: '700', color: '#374151' },
   gaugeTrack:   { height: 8, backgroundColor: '#E5E7EB', borderRadius: 4, overflow: 'hidden' },
@@ -800,11 +787,11 @@ const rp = StyleSheet.create({
   adviceItem:   { flexDirection: 'row', gap: 12, alignItems: 'flex-start' },
   adviceEmoji:  { fontSize: 24, marginTop: 2 },
   adviceTitle:  { fontSize: 13, fontWeight: '800', color: '#1A1A1A', marginBottom: 4 },
-  adviceBody:   { fontSize: 12, color: '#6B7280', lineHeight: 18 },
+  adviceBody:   { fontSize: 12, color: '#6B7280', lineHeight: 18, wordBreak: 'keep-all', overflowWrap: 'break-word' },
   guideRow:     { flexDirection: 'row', alignItems: 'flex-start', gap: 10 },
   guideBullet:  { width: 22, height: 22, borderRadius: 11, backgroundColor: '#1A1A1A', justifyContent: 'center', alignItems: 'center', marginTop: 1 },
   guideBulletTxt: { fontSize: 11, fontWeight: '900', color: '#FFF' },
-  guideBody:    { flex: 1, fontSize: 13, color: '#374151', lineHeight: 20 },
+  guideBody:    { flex: 1, fontSize: 13, color: '#374151', lineHeight: 20, wordBreak: 'keep-all', overflowWrap: 'break-word' },
   footer:       { alignItems: 'center', paddingVertical: 8 },
   footerTxt:    { fontSize: 11, color: '#9CA3AF' },
 });
@@ -813,7 +800,7 @@ const styles = StyleSheet.create({
   centerContainer:  { flex: 1, justifyContent: 'center', alignItems: 'center' },
   emoji:            { fontSize: 64, marginBottom: 16 },
   title:            { fontSize: 26, fontWeight: '900', color: '#1A1A1A', marginBottom: 12 },
-  subtitle:         { fontSize: 16, color: '#6B7280', textAlign: 'center', lineHeight: 24, marginBottom: 32 },
+  subtitle:         { fontSize: 16, color: '#6B7280', textAlign: 'center', lineHeight: 24, marginBottom: 32, wordBreak: 'keep-all', overflowWrap: 'break-word' },
   dimText:          { fontSize: 13, color: '#9CA3AF' },
   errorText:        { fontSize: 13, color: '#EF4444' },
   primaryBtn:       { width: '100%', backgroundColor: '#1A1A1A', paddingVertical: 16, borderRadius: 16, alignItems: 'center' },
@@ -824,9 +811,9 @@ const styles = StyleSheet.create({
   archiveBtnText:   { color: '#4B5563', fontSize: 14, fontWeight: '700' },
   ghostBtn:         { width: '100%', borderWidth: 1.5, borderColor: '#E5E7EB', paddingVertical: 14, borderRadius: 14, alignItems: 'center' },
   ghostBtnText:     { color: '#9CA3AF', fontSize: 14, fontWeight: '600' },
-  kakaoBtn:         { width: '100%', backgroundColor: '#FEE500', paddingVertical: 16, borderRadius: 16, alignItems: 'center' },
-  kakaoBtnText:     { color: '#191600', fontSize: 16, fontWeight: '800' },
-  kakaoBtnSub:      { color: 'rgba(25,22,0,0.5)', fontSize: 11, marginTop: 4 },
+  tossShareBtn:     { width: '100%', backgroundColor: '#1A1A1A', paddingVertical: 16, borderRadius: 16, alignItems: 'center' },
+  tossShareBtnText: { color: '#FFFFFF', fontSize: 16, fontWeight: '800' },
+  tossShareBtnSub:  { color: 'rgba(255,255,255,0.6)', fontSize: 11, marginTop: 4 },
   shareSection:     { width: '100%', marginBottom: 16, minHeight: 80, justifyContent: 'center' },
   scrollShell:      { paddingHorizontal: 0, paddingTop: 0, paddingBottom: 0 },
   scrollContent:    { paddingHorizontal: 20, paddingTop: 16, paddingBottom: 24 },
@@ -852,4 +839,33 @@ const styles = StyleSheet.create({
   choiceText:       { flex: 1, fontSize: 12, color: '#374151', lineHeight: 18 },
   compromiseInput:  { borderWidth: 1, borderColor: '#D1D5DB', borderRadius: 10, padding: 10, fontSize: 13, color: '#1A1A1A', marginTop: 4, minHeight: 60, textAlignVertical: 'top', backgroundColor: '#FFFFFF' },
   skippedCard:      { backgroundColor: '#F9FAFB', borderWidth: 1.5, borderColor: '#E5E7EB', borderRadius: 16, padding: 16, marginBottom: 10 },
+  notifyShareBtn: {
+    width: '100%',
+    backgroundColor: '#0064FF',
+    paddingVertical: 18,
+    borderRadius: 16,
+    alignItems: 'center',
+    gap: 4,
+    shadowColor: '#0064FF',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 12,
+    elevation: 6,
+    marginBottom: 12,
+  },
+  notifyShareBtnText: { color: '#FFFFFF', fontSize: 16, fontWeight: '900' },
+  notifyShareBtnSub:  { color: 'rgba(255,255,255,0.7)', fontSize: 11, fontWeight: '600' },
+  waitingBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: '#F9FAFB',
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+  },
+  waitingText: { fontSize: 13, color: '#6B7280', flex: 1, lineHeight: 18 },
 });

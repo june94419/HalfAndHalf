@@ -67,8 +67,6 @@
       "themeColor": "#FFFFFF"
     },
     "plugins": [
-      "expo-web-browser",
-      "expo-secure-store",
       [
         "expo-build-properties",
         {

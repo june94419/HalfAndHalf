@@ -6,10 +6,7 @@
   },
   "build": {
     "base": {
-      "node": "20.18.0",
-      "env": {
-        "EXPO_PUBLIC_KAKAO_REST_API_KEY": "4d71718253f569c89167ede6a5b17bc3"
-      }
+      "node": "20.18.0"
     },
     "development": {
       "extends": "base",

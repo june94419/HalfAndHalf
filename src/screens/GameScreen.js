@@ -3,9 +3,12 @@ import {
   View, Text, TouchableOpacity, StyleSheet,
   ActivityIndicator, ScrollView,
 } from 'react-native';
-import { get, ref, update } from 'firebase/database';
+import { signInAnonymously } from 'firebase/auth';
+import { get, ref, set, update } from 'firebase/database';
+import { getAnonymousKey } from '@apps-in-toss/web-framework';
 import { auth, db } from '../../firebase';
-import { BALANCE_QUESTIONS } from '../data/balanceQuestions';
+import { getCachedQuestionsSync } from '../utils/questionsDB';
+import { registerCreatorPushConsent } from '../utils/tossNotification';
 import ScreenShell from '../components/ScreenShell';
 import { trackEvent } from '../utils/analytics';
 
@@ -21,7 +24,8 @@ export default function GameScreen({ route, navigation }) {
   const [selectedChoice, setSelectedChoice] = useState(null); // 'A' | 'B' | 'skipped' | null
   const [history, setHistory]             = useState([]);
 
-  const autoAdvanceRef = useRef(null); // 자동 전환 타이머 ID
+  const autoAdvanceRef        = useRef(null);  // 자동 전환 타이머 ID
+  const isSoloCompletingRef   = useRef(false); // 중복 완료 제출 방지 자물쇠
 
   const handleGoLobby = () => {
     if (typeof window !== 'undefined' && window.history) {
@@ -38,7 +42,7 @@ export default function GameScreen({ route, navigation }) {
         if (!snap.exists()) { handleGoLobby(); return; }
         const data = snap.val();
         const roomQuestions = Object.keys(data.answersA)
-          .map(idStr => BALANCE_QUESTIONS.find(q => q.id === Number(idStr)))
+          .map(idStr => getCachedQuestionsSync().find(q => q.id === Number(idStr)))
           .filter(Boolean);
         setQuestions(roomQuestions);
         setCategory(data.category);
@@ -63,6 +67,66 @@ export default function GameScreen({ route, navigation }) {
 
   const currentQuestion = questions[currentIndex];
 
+  // ── A: 솔로 게임 완료 → couples 방 생성 → 즉시 Result 이동 ─────
+  const handleSoloComplete = async (finalHistory) => {
+    // 중복 실행 자물쇠 — 리렌더링으로 인한 재진입 원천 차단
+    if (isSoloCompletingRef.current) return;
+    isSoloCompletingRef.current = true;
+
+    setSubmitting(true);
+
+    // ① 코드·익명 로그인 동기 준비
+    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+    const code  = Array.from({ length: 6 }, () => chars[Math.floor(Math.random() * chars.length)]).join('');
+
+    const creatorAnswers = finalHistory.reduce((acc, { questionId, choice }) => {
+      acc[questionId] = choice; return acc;
+    }, {});
+
+    // ② Toss 해시 취득 (2초 타임아웃, 실패 시 '' 폴백 — Firebase 저장 절대 블로킹 안 함)
+    let creatorTossHash = '';
+    try {
+      const keyResult = await Promise.race([
+        getAnonymousKey(),
+        new Promise((_, rej) => setTimeout(() => rej(new Error('hash_timeout')), 2000)),
+      ]);
+      if (keyResult && keyResult !== 'ERROR' && keyResult?.type === 'HASH') {
+        creatorTossHash = keyResult.hash ?? '';
+      }
+    } catch { /* 폴백: '' */ }
+
+    // ③ Firebase 익명 로그인 (실패 시 uid = 'anon_fallback')
+    let uid = 'anon_fallback';
+    try {
+      const { user } = await signInAnonymously(auth);
+      uid = user.uid;
+    } catch { /* uid 폴백 유지 */ }
+
+    // ④ Firebase set — fire-and-forget: 저장 완료 여부와 무관하게 즉시 화면 이동
+    set(ref(db, `couples/${code}`), {
+      creatorId:       uid,
+      creatorTossHash: creatorTossHash || '',
+      creatorAnswers,
+      questionIds:     finalHistory.map(h => h.questionId),
+      category,
+      status:          'waiting',
+      createdAt:       new Date().toISOString(),
+    }).catch(e => console.error('[GameScreen] Firebase 백그라운드 저장 실패:', e));
+
+    // ⑤ 알림 동의 요청 — 20문항 완료 직후(가장 동기부여 높은 시점). 동의 시 creatorPushToken Firebase 업데이트.
+    // fire-and-forget: 동의 팝업은 Result 화면에서 비동기로 표시됨, 게임 플로우 비차단.
+    registerCreatorPushConsent(code);
+
+    // ⑥ 저장 성공/실패 무관 — 유저를 무조건 Result로 이동. 자물쇠 해제.
+    isSoloCompletingRef.current = false;
+    navigation.replace('Result', {
+      coupleCode: code,
+      isCreator:  true,
+      history:    finalHistory,
+      category,
+    });
+  };
+
   // ── 다음 문항으로 실제 전환 ───────────────────────────────────
   const doAdvance = (finalHistory) => {
     if (currentIndex + 1 < questions.length) {
@@ -72,8 +136,10 @@ export default function GameScreen({ route, navigation }) {
     } else {
       if (mode === 'partner' && coupleCode) {
         handleSubmit(finalHistory);
+      } else if (roomId) {
+        navigation.replace('Result', { roomId, history: finalHistory });
       } else {
-        navigation.replace('Result', roomId ? { roomId, history: finalHistory } : { category, history: finalHistory });
+        handleSoloComplete(finalHistory);
       }
     }
   };
@@ -127,15 +193,22 @@ export default function GameScreen({ route, navigation }) {
         acc[questionId] = choice;
         return acc;
       }, {});
+      // notifyCreatorAt + status='completed' 를 동시 기록.
+      // Cloud Functions 가 이 필드 변경을 감지 →
+      //   couples/${coupleCode}/creatorPushToken 을 읽어 Toss Smart Delivery API 로 A에게 푸시 발송.
+      // 알림 문구: "연인분이 답변을 완료했어요! 두 분의 가치관 반반 리포트를 확인해보세요."
       await update(ref(db, `couples/${coupleCode}`), {
-        partnerId:      auth.currentUser?.uid ?? null,
+        partnerId:        auth.currentUser?.uid ?? null,
         partnerAnswers,
-        status:         'completed',
+        status:           'completed',
+        notifyCreatorAt:  new Date().toISOString(),
+        // Cloud Functions 가 이 필드 변경 감지 → creatorPushToken 으로 Toss Smart Delivery 발송
+        // 푸시 문구: "연인이 밸런스 게임을 완료하였습니다!"
       });
-      navigation.replace('Result', { coupleCode });
+      navigation.replace('Result', { coupleCode, isPartner: true });
     } catch (e) {
       console.error('[GameScreen] 파트너 제출 실패:', e);
-      navigation.replace('Result', { coupleCode });
+      navigation.replace('Result', { coupleCode, isPartner: true });
     } finally {
       setSubmitting(false);
     }
@@ -269,7 +342,7 @@ const s = StyleSheet.create({
   tagBadge:          { alignSelf: 'center', backgroundColor: '#F3F4F6', paddingHorizontal: 12, paddingVertical: 5, borderRadius: 20, marginBottom: 12 },
   tagText:           { fontSize: 11, fontWeight: '700', color: '#6B7280' },
   questionBox:       { backgroundColor: '#FAFAFA', borderWidth: 1, borderColor: '#E5E7EB', borderRadius: 16, padding: 16, marginBottom: 16, alignItems: 'center' },
-  questionGuideText: { fontSize: 15, fontWeight: '800', color: '#111827', textAlign: 'center', lineHeight: 24 },
+  questionGuideText: { fontSize: 15, fontWeight: '800', color: '#111827', textAlign: 'center', lineHeight: 24, wordBreak: 'keep-all', overflowWrap: 'break-word' },
 
   // 선택지 공통
   optionButton:  { borderWidth: 1.5, borderRadius: 20, padding: 20, alignItems: 'center', minHeight: 120 },
@@ -300,9 +373,9 @@ const s = StyleSheet.create({
   optionBadgeText:      { fontSize: 11, fontWeight: '800', color: '#4B5563' },
   optionBadgeTextSelected: { color: '#FFFFFF' },
 
-  questionText:         { fontSize: 15, fontWeight: '900', color: '#1A1A1A', textAlign: 'center', marginBottom: 6, lineHeight: 22 },
+  questionText:         { fontSize: 15, fontWeight: '900', color: '#1A1A1A', textAlign: 'center', marginBottom: 6, lineHeight: 22, wordBreak: 'keep-all', overflowWrap: 'break-word' },
   questionTextSelected: { color: '#1A1A1A' },
-  descText:             { fontSize: 12, color: '#6B7280', textAlign: 'center', lineHeight: 18 },
+  descText:             { fontSize: 12, color: '#6B7280', textAlign: 'center', lineHeight: 18, wordBreak: 'keep-all', overflowWrap: 'break-word' },
 
   // VS 구분선
   vsRow:    { flexDirection: 'row', alignItems: 'center', marginVertical: -14, zIndex: 10 },

@@ -1,0 +1,9 @@
+{
+  "appName": "halfandhalf",
+  "permissions": [
+    {
+      "name": "clipboard",
+      "access": "write"
+    }
+  ]
+}

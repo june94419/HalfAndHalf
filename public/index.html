@@ -3,7 +3,20 @@
   <head>
     <meta charset="utf-8" />
     <meta httpEquiv="X-UA-Compatible" content="IE=edge" />
-    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, minimum-scale=1, user-scalable=no, shrink-to-fit=no" />
+
+    <!-- ── Content Security Policy ──────────────────────────────── -->
+    <meta http-equiv="Content-Security-Policy" content="
+      default-src 'self';
+      script-src 'self' 'unsafe-inline' https://www.googletagmanager.com https://www.google-analytics.com https://t1.kakaocdn.net;
+      connect-src 'self' https://*.googleapis.com wss://*.firebaseio.com https://*.firebaseio.com https://www.google-analytics.com https://kapi.kakao.com https://developers.kakao.com;
+      img-src 'self' data: https:;
+      style-src 'self' 'unsafe-inline';
+      font-src 'self' data:;
+      object-src 'none';
+      base-uri 'self';
+      frame-ancestors 'none';
+    " />
 
     <!-- ── 기본 SEO ──────────────────────────────────────────── -->
     <title>반반 (Half And Half) - 연인 가치관 밸런스 게임 백서</title>
@@ -11,7 +24,7 @@
     <meta name="keywords" content="밸런스게임, 커플밸런스게임, 연애가치관, 커플질문, 가치관조율, 반반, HalfandHalf" />
     <meta name="robots" content="index,follow" />
 
-    <!-- ── Open Graph (카카오톡·페이스북·인스타 링크 미리보기) ── -->
+    <!-- ── Open Graph (SNS 링크 미리보기) ────────────────────── -->
     <meta property="og:type" content="website" />
     <meta property="og:url" content="https://half-and-half-nine.vercel.app" />
     <meta property="og:title" content="🤔 우리 연애 가치관은 몇 %나 맞을까? | 반반" />
@@ -28,7 +41,7 @@
     <meta name="apple-mobile-web-app-title" content="반반" />
     <meta name="theme-color" content="#FFFFFF" />
 
-    <!-- ── Google Analytics 4 (측정 ID: EXPO_PUBLIC_GA_MEASUREMENT_ID) ── -->
+    <!-- ── Google Analytics 4 ────────────────────────────────── -->
     <script async src="https://www.googletagmanager.com/gtag/js?id=G-XXXXXXXXXX"></script>
     <script>
       window.dataLayer = window.dataLayer || [];
@@ -36,13 +49,6 @@
       gtag('js', new Date());
       gtag('config', 'G-XXXXXXXXXX', { send_page_view: false });
     </script>
-
-    <!-- ── 카카오 링크 SDK ────────────────────────────────────── -->
-    <script
-      src="https://t1.kakaocdn.net/kakao_js_sdk/2.7.2/kakao.min.js"
-      integrity="sha384-TiCUE00h649CAMonG018J2FOGLYHxaRNAqb6UZSdU9ScwhOPFbiQ63qZANFwDK1b"
-      crossorigin="anonymous"
-    ></script>
 
     <style id="expo-reset">
       html, body { height: 100%; }

@@ -6,9 +6,9 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { signInAnonymously } from 'firebase/auth';
 import { ref, get } from 'firebase/database';
 import { auth, db } from '../../firebase';
-import { BALANCE_QUESTIONS } from '../data/balanceQuestions';
+import { loadQuestions, getQuestionsByIds } from '../utils/questionsDB';
 
-// App.js 의 PostLoginHandler 와 공유하는 스토리지 키 (카카오 OAuth 복귀용, 유지)
+// App.js 의 PostLoginHandler 와 공유하는 스토리지 키
 export const PENDING_CODE_KEY = 'banban_pending_couple_code';
 
 export default function InviteScreen({ route, navigation }) {
@@ -25,7 +25,12 @@ export default function InviteScreen({ route, navigation }) {
       try {
         const snap = await get(ref(db, `couples/${code}`));
         if (!snap.exists()) { setCoupleStatus('invalid'); return; }
-        setCoupleData(snap.val());
+        const data = snap.val();
+        if (data.status === 'completed') {
+          navigation.replace('Result', { coupleCode: code });
+          return;
+        }
+        setCoupleData(data);
         setCoupleStatus('ready');
       } catch (e) {
         console.error('[InviteScreen] DB 조회 실패:', e);
@@ -42,12 +47,14 @@ export default function InviteScreen({ route, navigation }) {
       // 페이지 리다이렉트 없이 즉시 완료되는 익명 로그인
       await signInAnonymously(auth);
 
-      const answersMap  = coupleData.creatorAnswers ?? {};
-      const questionIds = Object.keys(answersMap).map(Number);
-      const questions   = questionIds
-        .map(id => BALANCE_QUESTIONS.find(q => q.id === id))
-        .filter(Boolean);
-      const category = questions[0]?.type ?? '돈';
+      // questionIds 배열이 있으면 A가 풀었던 순서 그대로 재현.
+      // 없으면 creatorAnswers 키로 폴백 (구형 방 지원).
+      const orderedIds = Array.isArray(coupleData.questionIds)
+        ? coupleData.questionIds.map(Number)
+        : Object.keys(coupleData.creatorAnswers ?? {}).map(Number);
+      const allQ = await loadQuestions();
+      const questions = getQuestionsByIds(allQ, orderedIds);
+      const category = coupleData.category ?? questions[0]?.type ?? '돈';
 
       navigation.replace('Game', {
         coupleCode: code,

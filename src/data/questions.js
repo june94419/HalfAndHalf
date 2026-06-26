@@ -6,7 +6,7 @@ export const QUESTIONS = [
   { id: 4, question: "🙋 혼자 노는 게 좋아 VS 👫 같이 노는 게 좋아", a: "혼자", b: "함께" },
   { id: 5, question: "🎬 영화관 VS 🛋️ 집에서 넷플릭스", a: "영화관", b: "넷플릭스" },
   { id: 6, question: "☕ 커피 VS 🍺 맥주", a: "커피", b: "맥주" },
-  { id: 7, question: "💬 카카오톡 VS 📞 전화 통화", a: "카카오톡", b: "전화" },
+  { id: 7, question: "💬 문자 메시지 VS 📞 전화 통화", a: "문자 메시지", b: "전화" },
   { id: 8, question: "📋 계획형 VS ⚡ 즉흥형", a: "계획형", b: "즉흥형" },
   { id: 9, question: "🐱 고양이 VS 🐶 강아지", a: "고양이", b: "강아지" },
   { id: 10, question: "🧂 짠맛 VS 🍬 단맛", a: "짠맛", b: "단맛" },
