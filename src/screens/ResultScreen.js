@@ -350,34 +350,11 @@ function CoupleResultScreen({ coupleCode, navigation }) {
           </View>
         )}
 
-        <View style={cs.appCtaCard}>
-          <Text style={cs.appCtaEmoji}>📱</Text>
-          <Text style={cs.appCtaTitle}>
-            우리 부부의 소름 돋는 심층 분석 결과와{'\n'}매운맛 질문은 앱에서 무료로 확인하세요!
-          </Text>
-          <View style={cs.appBtnRow}>
-            <TouchableOpacity style={cs.appStoreBtn} activeOpacity={0.82}>
-              <Text style={cs.appStoreBtnIcon}>🍎</Text>
-              <View>
-                <Text style={cs.appStoreBtnSub}>Download on the</Text>
-                <Text style={cs.appStoreBtnMain}>App Store</Text>
-              </View>
-            </TouchableOpacity>
-            <TouchableOpacity style={cs.appStoreBtn} activeOpacity={0.82}>
-              <Text style={cs.appStoreBtnIcon}>▶</Text>
-              <View>
-                <Text style={cs.appStoreBtnSub}>Get it on</Text>
-                <Text style={cs.appStoreBtnMain}>Google Play</Text>
-              </View>
-            </TouchableOpacity>
-          </View>
-        </View>
-
         <View style={cs.shareSection}>
           <Text style={cs.shareLabel}>결과가 마음에 들었나요? 친구들에게 소문내 주세요 🙌</Text>
           <TouchableOpacity style={[cs.shareBtn, shared && cs.shareBtnDone]} onPress={handleShare} activeOpacity={0.88}>
-            <Text style={cs.shareBtnText}>{shared ? '✅ 링크가 복사됐어요!' : '📋 초대 링크 복사하기'}</Text>
-            {!shared && <Text style={cs.shareBtnSub}>링크를 복사해서 친구에게 보내세요</Text>}
+            <Text style={cs.shareBtnText}>{shared ? '✅ 링크가 복사됐어요!' : '📋 반반 미니앱 링크 복사하기'}</Text>
+            {!shared && <Text style={cs.shareBtnSub}>토스에서 반반을 친구에게 공유해보세요</Text>}
           </TouchableOpacity>
         </View>
 
