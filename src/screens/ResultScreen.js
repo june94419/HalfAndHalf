@@ -78,10 +78,8 @@ function CreatorInviteScreen({ coupleCode, category, navigation }) {
   }, [coupleCode]);
 
   const handleShare = async () => {
-    // 토스 인앱 여부와 무관하게 항상 유효한 웹 초대 URL 구성
-    const webInviteUrl =
-      (typeof window !== 'undefined' ? window.location.origin : 'https://half-and-half-nine.vercel.app')
-      + `?code=${coupleCode}`;
+    // 항상 banban.io.kr 도메인 사용 — Toss WebView의 내부 origin에 의존하지 않음
+    const webInviteUrl = `https://banban.io.kr/?code=${coupleCode}`;
 
     let shareLink = webInviteUrl;
     try {

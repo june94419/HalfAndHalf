@@ -102,22 +102,26 @@ export default function GameScreen({ route, navigation }) {
       uid = user.uid;
     } catch { /* uid 폴백 유지 */ }
 
-    // ④ Firebase set — fire-and-forget: 저장 완료 여부와 무관하게 즉시 화면 이동
-    set(ref(db, `couples/${code}`), {
-      creatorId:       uid,
-      creatorTossHash: creatorTossHash || '',
-      creatorAnswers,
-      questionIds:     finalHistory.map(h => h.questionId),
-      category,
-      status:          'waiting',
-      createdAt:       new Date().toISOString(),
-    }).catch(e => console.error('[GameScreen] Firebase 백그라운드 저장 실패:', e));
+    // ④ Firebase set — await로 저장 완료 확인 후 화면 이동 (fire-and-forget 제거)
+    // 저장 실패 시에도 Result로 이동하되 에러 로그 기록
+    try {
+      await set(ref(db, `couples/${code}`), {
+        creatorId:       uid,
+        creatorTossHash: creatorTossHash || '',
+        creatorAnswers,
+        questionIds:     finalHistory.map(h => h.questionId),
+        category,
+        status:          'waiting',
+        createdAt:       new Date().toISOString(),
+      });
+    } catch (e) {
+      console.error('[GameScreen] Firebase 저장 실패:', e);
+    }
 
-    // ⑤ 알림 동의 요청 — 20문항 완료 직후(가장 동기부여 높은 시점). 동의 시 creatorPushToken Firebase 업데이트.
-    // fire-and-forget: 동의 팝업은 Result 화면에서 비동기로 표시됨, 게임 플로우 비차단.
+    // ⑤ 알림 동의 요청 — fire-and-forget 유지 (게임 플로우 비차단)
     registerCreatorPushConsent(code);
 
-    // ⑥ 저장 성공/실패 무관 — 유저를 무조건 Result로 이동. 자물쇠 해제.
+    // ⑥ 저장 후 Result로 이동. 자물쇠 해제.
     isSoloCompletingRef.current = false;
     navigation.replace('Result', {
       coupleCode: code,
