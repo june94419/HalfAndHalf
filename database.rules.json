@@ -4,19 +4,22 @@
       "$coupleCode": {
         ".read": true,
 
-        // A(creator): 인증된 사용자만 새 방 생성 가능 (기존 데이터 없을 때만)
+        // 신규 방 생성(A): 인증 사용자만, 기존 데이터 없을 때만
+        // 파트너 답변 제출(B): 인증 사용자, waiting 상태인 방만 업데이트 가능
+        // 완료 후 재수정 불가 (status=completed 이면 잠김)
         ".write": "auth != null && (!data.exists() || data.child('status').val() === 'waiting')",
 
         ".validate": "newData.hasChildren(['creatorAnswers', 'status', 'createdAt'])",
 
         "status": {
-          // waiting → completed 단방향 전환만 허용 (완료 후 되돌리기 불가)
+          // waiting → completed 단방향만 허용
           ".validate": "newData.val() === 'waiting' || (data.val() === 'waiting' && newData.val() === 'completed')"
         },
 
         "partnerAnswers": {
-          // B 답변은 한 번만 쓸 수 있음 (덮어쓰기 불가)
-          ".write": "auth != null && !data.exists()"
+          // waiting 상태인 동안은 B가 여러 번 쓸 수 있음 (네트워크 재시도 허용)
+          // 부모 .write 조건(status=waiting)이 이미 완료 후 잠금을 보장
+          ".write": "auth != null && data.parent().child('status').val() === 'waiting'"
         }
       }
     },
@@ -28,7 +31,6 @@
       }
     },
 
-    // 그 외 경로는 읽기·쓰기 모두 차단
     "$other": {
       ".read": false,
       ".write": false
